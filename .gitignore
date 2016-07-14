@@ -1,0 +1,6 @@
+*.DS_Store
+
+vizsent/Sentibank
+vizsent/models
+vizsent/vids
+vizsent/soumith/models

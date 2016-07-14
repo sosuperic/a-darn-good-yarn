@@ -1,0 +1,2 @@
+th main.lua -data /media/lsm/data/echu/vizsent/Sentibank/Flickr/data_split -nGPU 1 -GPU 1 -cropSize 227 -nClasses 2 -cache /media/lsm/data/echu/vizsent/data_split_trained -batchSize 128 -nEpochs 100 -epochSize 2500 -LR 0.001
+
