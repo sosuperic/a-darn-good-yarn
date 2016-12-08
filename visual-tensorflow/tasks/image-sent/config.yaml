@@ -1,3 +1,10 @@
 model:
   method: adam
   lr: 0.01
+  batch_size: 32
+  img_size:
+    w: 256
+    h: 256
+  img_crop_size:
+    w: 224
+    h: 224
