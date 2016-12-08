@@ -1,0 +1,3 @@
+model:
+  method: adam
+  lr: 0.01
