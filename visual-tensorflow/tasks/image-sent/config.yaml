@@ -1,10 +1,11 @@
 model:
-  method: adam
+  optim: adam
   lr: 0.01
-  batch_size: 32
+  batch_size: 8
   img_size:
     w: 256
     h: 256
   img_crop_size:
     w: 224
     h: 224
+  epochs: 10

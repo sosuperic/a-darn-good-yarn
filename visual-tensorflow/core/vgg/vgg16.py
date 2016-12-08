@@ -14,12 +14,13 @@ from imagenet_classes import class_names
 __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 class vgg16(object):
-    def __init__(self, imgs, weights=None, sess=None):
-        self.imgs = imgs
+    def __init__(self, batch_size=None, w=None, h=None, sess=None, load_weights=True):
+        self.imgs = tf.placeholder(tf.float32, shape=[batch_size, h, w, 3], name='vgg_images')
+        self.parameters = []
         self.convlayers()
         self.fc_layers()
         self.probs = tf.nn.softmax(self.fc3l)
-        if sess is not None:
+        if (sess is not None) and load_weights:
             self.load_weights(sess)
 
     def load_weights(self, sess):
@@ -31,18 +32,16 @@ class vgg16(object):
 
     ###################################################################################################################
     def convlayers(self):
-        self.parameters = []
-
         # zero-mean input
         with tf.name_scope('preprocess') as scope:
             mean = tf.constant([123.68, 116.779, 103.939], dtype=tf.float32, shape=[1, 1, 1, 3], name='img_mean')
-            images = self.imgs-mean
+            imgs = self.imgs-mean
 
         # conv1_1
         with tf.name_scope('conv1_1') as scope:
             kernel = tf.Variable(tf.truncated_normal([3, 3, 3, 64], dtype=tf.float32,
                                                      stddev=1e-1), name='weights')
-            conv = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], padding='SAME')
+            conv = tf.nn.conv2d(imgs, kernel, [1, 1, 1, 1], padding='SAME')
             biases = tf.Variable(tf.constant(0.0, shape=[64], dtype=tf.float32),
                                  trainable=True, name='biases')
             out = tf.nn.bias_add(conv, biases)
