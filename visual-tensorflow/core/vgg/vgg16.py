@@ -14,8 +14,9 @@ from imagenet_classes import class_names
 __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 class vgg16(object):
-    def __init__(self, batch_size=None, w=None, h=None, sess=None, load_weights=True):
-        self.imgs = tf.placeholder(tf.float32, shape=[batch_size, h, w, 3], name='vgg_images')
+    def __init__(self, batch_size=None, w=None, h=None, sess=None, load_weights=True, output_dim=None):
+        self.imgs = tf.placeholder(tf.float32, shape=[batch_size, h, w, 3], name='img_batch')
+        self.output_dim = output_dim
         self.parameters = []
         self.convlayers()
         self.fc_layers()
@@ -218,7 +219,7 @@ class vgg16(object):
     def fc_layers(self):
         # fc1
         with tf.name_scope('fc1') as scope:
-            shape = int(np.prod(self.pool5.get_shape()[1:]))
+            shape = int(np.prod(self.pool5.get_shape()[1:]))        # ignore first dim b/c that's the batch
             fc1w = tf.Variable(tf.truncated_normal([shape, 4096],
                                                          dtype=tf.float32,
                                                          stddev=1e-1), name='weights')
@@ -242,10 +243,10 @@ class vgg16(object):
 
         # fc3
         with tf.name_scope('fc3') as scope:
-            fc3w = tf.Variable(tf.truncated_normal([4096, 1000],
+            fc3w = tf.Variable(tf.truncated_normal([4096, self.output_dim],
                                                          dtype=tf.float32,
                                                          stddev=1e-1), name='weights')
-            fc3b = tf.Variable(tf.constant(1.0, shape=[1000], dtype=tf.float32),
+            fc3b = tf.Variable(tf.constant(1.0, shape=[self.output_dim], dtype=tf.float32),
                                  trainable=True, name='biases')
             self.fc3l = tf.nn.bias_add(tf.matmul(self.fc2, fc3w), fc3b)
             self.parameters += [fc3w, fc3b]

@@ -4,3 +4,7 @@ vizsent/Sentibank
 vizsent/models
 vizsent/vids
 vizsent/soumith/models
+
+*.pyc
+*.npz
+*idea/
