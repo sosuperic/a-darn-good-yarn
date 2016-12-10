@@ -4,7 +4,7 @@ import os
 import tensorflow as tf
 from scipy.misc import imread, imresize
 
-from core.utils import read_yaml, get_optimizer
+from core.utils.utils import read_yaml, get_optimizer
 from core.basic_cnn import BasicVizsentCNN
 from core.vgg.vgg16 import vgg16
 
