@@ -4,6 +4,7 @@ Includes analysis of positive-negative sentiment and emotions on images and vide
 ## symlinks
 - List of symlinks set up
     * Each dataset in `data/`
+        * `Sentibank`, `emolex`, `videos`, `you_imemo`
     * `core` in each task dir in `tasks/`
         * These are currently also set up in `bash/setup_symlinks.sh` (and should be added for each subsequent task). They are not done for the datasets because the location of the datasets is up to the user and system.
 - To set up a symlink:
