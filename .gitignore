@@ -8,3 +8,4 @@ vizsent/soumith/models
 *.pyc
 *.npz
 *idea/
+*.ipynb_checkpoints
