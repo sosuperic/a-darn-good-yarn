@@ -45,7 +45,17 @@ def combine_cmdline_and_yaml(cmdline, yaml):
         if cmdline_dict[param] is None:
             cmdline_dict[param] = yaml[arch][obj][param]
 
+    # Add all key-values that aren't in cmdline_dict just to make sure (e.g. img_crop_h not in argparse)
+    def add_remaining_kvs(yaml):
+        for k,v in yaml.items():
+            if isinstance(v, dict):
+                add_remaining_kvs(v)
+            else:
+                cmdline_dict[k] = v
+    add_remaining_kvs(yaml)
+
     return cmdline_dict
+
 
 def get_optimizer(config):
     """Return tf optimizer"""
