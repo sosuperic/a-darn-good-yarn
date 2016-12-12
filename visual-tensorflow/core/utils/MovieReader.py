@@ -45,7 +45,11 @@ class MovieReader(object):
     def resize_and_center_crop(self, frame, target_w, target_h):
         """Resize while keeping aspect ratio so that (w >= target_w and h >= target_h).
         Then center crop. Frame may be smaller or larger than targets.
+
+        frame := numpy array
         """
+        if len(frame.shape) == 2:       # black and white?
+            frame = np.expand_dims(frame, 2)
         h, w, n_channels = frame.shape
 
         # Resizing
@@ -57,16 +61,19 @@ class MovieReader(object):
         # be resized to the target size, maximizing what's 'left over'. We want as much 
         # left over as possible before the central crop.
         h2w_ratio = float(h) / w
-        h2target_h, w2target_w = h / target_h, w / target_w
+        h2target_h, w2target_w = float(h) / target_h, float(w) / target_w
+        # print h2target_h, w2target_w
         if h2target_h < w2target_w:
             new_h = target_h
             new_w = int(target_h / h2w_ratio)
+            # print new_h, new_w
         else:
             new_w = target_w
             new_h = int(target_w * h2w_ratio)
+            # print new_w, new_h
         frame = cv2.resize(frame, (new_w, new_h))
+        # print frame.shape
 
-        # result = frame
         # Central crop
         if new_h == target_h:                       # width must be cropped or filled
             w_offset = int(round((abs(target_w - new_w)) / 2.0))
@@ -76,7 +83,7 @@ class MovieReader(object):
             else:                                   # crop off sides
                 result = frame[:,w_offset:w_offset+target_w,:]
         else:                                       # crop off top and bottom
-            h_offset = int(round((target_h - new_h) / 2.0))
+            h_offset = int(round((abs(target_h - new_h)) / 2.0))
             if new_h < target_h:                    # fill sides
                 result = np.zeros([target_h, target_w, n_channels])
                 result[h_offset:h_offset+target_h,:,:] = frame

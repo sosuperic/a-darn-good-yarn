@@ -1,10 +1,16 @@
 # Prepare the data
 
+from collections import defaultdict, Counter
+import numpy as np
 import os
 import pickle
 import re
+from skimage import color
 import urllib
-from collections import defaultdict, Counter
+
+from PIL import Image
+
+from core.utils.MovieReader import MovieReader
 
 # Sentibank - bi_concepts1553: mapping ajdective noun pairs to sentiment
 BC_PATH = 'data/Sentibank/Flickr/bi_concepts1553'
@@ -161,7 +167,7 @@ def retrieve_you_imemo_imgs(out_dir=os.path.join(YOU_IMEMO_PATH, 'imgs')):
 
 
 ### MVSO
-def get_mvso_bc2sentiment():
+def get_MVSO_bc2sentiment():
     """Return dict from bi_concept to sentiment value"""
     bc2sentiment = {}
     with open(os.path.join(MVSO_PATH, 'mvso_sentiment', 'english.csv'), 'r') as f:
@@ -170,7 +176,7 @@ def get_mvso_bc2sentiment():
             bc2sentiment[bc] = float(sentiment)
     return bc2sentiment
 
-def get_mvso_bc2emotion2value():
+def get_MVSO_bc2emotion2value():
     """Return dict from bi_concept to dict from emotion to score"""
     bc2emotion2value = defaultdict(dict)
     col2emo = {}
@@ -181,13 +187,52 @@ def get_mvso_bc2emotion2value():
                 header = line.strip().split(',')
                 for j in range(1, len(header)):
                     col2emo[j] = header[j]
+                i += 1
             else:
                 line = line.strip().split(',')
                 bc = line[0]
                 for j in range(1, len(line)):
                     emotion = col2emo[j]
                     bc2emotion2value[bc][emotion] = float(line[j])
+                i += 1
+
     return bc2emotion2value
+
+def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256, target_h=256):
+    """Download, resize, and center crop images"""
+    mr = MovieReader()          # used to resize and center crop
+    with open(os.path.join(MVSO_PATH, 'image_url_mappings', 'english.csv'), 'r') as f:
+        i = 0
+        for line in f.readlines():
+            if i == 0:      # skip header
+                i += 1
+                continue
+            else:
+                bc, url = line.strip().split(',')
+                bc_dir = os.path.join(output_dir, bc)
+
+                if i % 50 == 0:
+                    print 'bi_concept: {}; num_imgs: {}'.format(bc, i)
+
+                # Make bi_concept directory if it doesn't exist
+                if not os.path.exists(bc_dir):
+                    os.makedirs(bc_dir)
+
+                # Retrive image and save
+                fn = os.path.basename(url)
+                fp = os.path.join(bc_dir, fn)
+                urllib.urlretrieve(url, fp)
+
+                # Reopen image to resize and central crop
+                im = Image.open(fp)
+                if im.mode != 'RGB':      # type L, P, etc. shows some type of Flickr unavailable photo img
+                    os.remove(fp)
+                    continue
+                im = np.array(im)
+                im =  mr.resize_and_center_crop(im, target_w, target_h)
+                Image.fromarray(im).save(fp)
+
+                i += 1
 
 ### BC
 # get_all_bc_img_fps()
@@ -201,8 +246,9 @@ def get_mvso_bc2emotion2value():
 
 ### MVSO
 import pprint
-# bc2sentiment = get_mvso_bc2sentiment()
+# bc2sentiment = get_MVSO_bc2sentiment()
 # pprint.pprint(bc2sentiment)
 # print len(bc2sentiment.keys())
-bc2emo2val = get_mvso_bc2emotion2value()
-pprint.pprint(bc2emo2val)
+# bc2emo2val = get_MVSO_bc2emotion2value()
+# pprint.pprint(bc2emo2val)
+download_MVSO_imgs()
