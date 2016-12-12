@@ -14,6 +14,9 @@ EMOLEX_PATH = 'data/emolex/NRC-emotion-lexicon-wordlevel-alphabetized-v0.92.txt'
 # You dataset - 20k images with emotions
 YOU_IMEMO_PATH = 'data/you_imemo/agg'
 
+# MVSO dataset - mutlilingual, larger version of Sentibank VSO; also has emotions
+MVSO_PATH = 'data/MVSO'
+
 
 ### bi_concepts1553 related data munging
 
@@ -156,6 +159,36 @@ def retrieve_you_imemo_imgs(out_dir=os.path.join(YOU_IMEMO_PATH, 'imgs')):
             img_name = os.path.basename(url)
             urllib.urlretrieve(url, os.path.join(emo_dir, img_name))
 
+
+### MVSO
+def get_mvso_bc2sentiment():
+    """Return dict from bi_concept to sentiment value"""
+    bc2sentiment = {}
+    with open(os.path.join(MVSO_PATH, 'mvso_sentiment', 'english.csv'), 'r') as f:
+        for line in f.readlines():
+            bc, sentiment = line.strip().split(',')
+            bc2sentiment[bc] = float(sentiment)
+    return bc2sentiment
+
+def get_mvso_bc2emotion2value():
+    """Return dict from bi_concept to dict from emotion to score"""
+    bc2emotion2value = defaultdict(dict)
+    col2emo = {}
+    with open(os.path.join(MVSO_PATH, 'ANP_emotion_scores', 'ANP_emotion_mapping_english.csv'), 'r') as f:
+        i = 0
+        for line in f.readlines():
+            if i == 0:      # header
+                header = line.strip().split(',')
+                for j in range(1, len(header)):
+                    col2emo[j] = header[j]
+            else:
+                line = line.strip().split(',')
+                bc = line[0]
+                for j in range(1, len(line)):
+                    emotion = col2emo[j]
+                    bc2emotion2value[bc][emotion] = float(line[j])
+    return bc2emotion2value
+
 ### BC
 # get_all_bc_img_fps()
 # tmp = get_bc_sentiments_and_counts()
@@ -164,4 +197,12 @@ def retrieve_you_imemo_imgs(out_dir=os.path.join(YOU_IMEMO_PATH, 'imgs')):
 
 ### You im_emo
 # get_you_imemo_urls()
-retrieve_you_imemo_imgs()
+# retrieve_you_imemo_imgs()
+
+### MVSO
+import pprint
+# bc2sentiment = get_mvso_bc2sentiment()
+# pprint.pprint(bc2sentiment)
+# print len(bc2sentiment.keys())
+bc2emo2val = get_mvso_bc2emotion2value()
+pprint.pprint(bc2emo2val)
