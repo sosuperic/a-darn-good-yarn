@@ -2,6 +2,6 @@
 
 cd data/Sentibank/Flickr/bi_concepts1553
 for d in */ ; do
-    echo "$d"
+    echo -e "$d\c"
     (cd $d && find . -name '*.jpg' | wc -l)
 done
