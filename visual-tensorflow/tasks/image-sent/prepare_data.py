@@ -37,20 +37,6 @@ def get_all_bc_img_fps():
 
     return bc2img_fps
 
-def get_bc_sentiments_and_counts():
-    """Return dictionary mapping bi_concept to positive-negative polarity values"""
-    bc2sent_and_count = defaultdict(dict)
-    with open('data/Sentibank/VSO/3244ANPs.txt', 'r') as f:
-        for line in f.readlines():
-            line = line.strip()
-            if line.endswith(']') and '_' in line:
-                print line
-                m = re.match(r'(.+_.+)\s\[sentiment:\s(.+)\]\s\[#imgs:\s(.+)\]', line)
-                bc, sent, count = m.group(1), float(m.group(2)), int(m.group(3).replace(',', ''))
-                bc2sent_and_count[bc]['sent'] = sent
-                bc2sent_and_count[bc]['count'] = count
-    return bc2sent_and_count
-
 def get_bc_traintest():
     """Return and save dictionary mapping each bc to train/test to positive/negative to path"""
     bc2split2posneg2path = defaultdict(dict)

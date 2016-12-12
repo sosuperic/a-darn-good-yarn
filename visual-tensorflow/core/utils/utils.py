@@ -4,7 +4,7 @@ import tensorflow as tf
 import yaml
 
 def read_yaml(path):
-    """Return parsed yaml"""
+    """Return dict from parsed yaml"""
     with open(path, 'r') as f:
         try:
             return yaml.load(f)
@@ -51,7 +51,8 @@ def combine_cmdline_and_yaml(cmdline, yaml):
             if isinstance(v, dict):
                 add_remaining_kvs(v)
             else:
-                cmdline_dict[k] = v
+                if k not in cmdline_dict:
+                    cmdline_dict[k] = v
     add_remaining_kvs(yaml)
 
     return cmdline_dict

@@ -5,11 +5,16 @@ img_h: 256
 batch_size: 8
 epochs: 10
 
+min_bc_class_size: -1
+
 basic_cnn:
     sent:
         optim: adam
         lr: 0.01
     emo:
+        optim: adam
+        lr: 0.01
+    bc:
         optim: adam
         lr: 0.01
     img_crop_w: 227
@@ -22,6 +27,9 @@ vgg:
     emo:
         optim: adam
         lr: 0.01
+    bc:
+        optim: adam
+        lr: 0.01
     img_crop_w: 224
     img_crop_h: 224
 
@@ -30,6 +38,9 @@ vgg_finetune:
         optim: adam
         lr: 0.01
     emo:
+        optim: adam
+        lr: 0.01
+    bc:
         optim: adam
         lr: 0.01
     img_crop_w: 224

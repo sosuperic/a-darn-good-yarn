@@ -14,6 +14,8 @@ if __name__ == '__main__':
 
     parser.add_argument('-m', dest='mode', default='train', help='train,test')
     parser.add_argument('-ds', dest='dataset', default='Sentibank', help='Sentibank,MVSO,you_imemo')
+    parser.add_argument('--min_bc_cs', dest='min_bc_class_size', type=int, default=None,
+                        help='when obj is bc, only use biconcepts if there is at least min_bc_cs images')
 
     # Basic params for which job (architecture, classification goal) we're running
     # This corresponds to the training parameters set in config.yaml
@@ -23,11 +25,11 @@ if __name__ == '__main__':
                         help='What to predict: sent,emo,bc')
 
     # General training params
-    parser.add_argument('-bs', dest='batch_size', default=None, help='batch size')
-    parser.add_argument('-e', dest='epochs', default=None, help='max number of epochs')
+    parser.add_argument('-bs', dest='batch_size', type=int, default=None, help='batch size')
+    parser.add_argument('-e', dest='epochs', type=int, default=None, help='max number of epochs')
 
     # Job specific training params
-    parser.add_argument('-lr', dest='lr', default=None, help='learning rate')
+    parser.add_argument('-lr', dest='lr', type=float, default=None, help='learning rate')
     parser.add_argument('-optim', dest='optim', default=None, help='optimziation method')
 
     # Testing options - not found in yaml
@@ -52,8 +54,8 @@ if __name__ == '__main__':
     import pprint
     pprint.pprint(params)
 
-    # network = Network(params)
-    # if params['mode'] == 'train':
-    #     network.train()
+    network = Network(params)
+    if params['mode'] == 'train':
+        network.train()
 
 
