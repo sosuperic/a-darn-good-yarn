@@ -1,11 +1,42 @@
-model:
-  optim: adam
-  lr: 0.01
-  batch_size: 8
-  img_size:
+
+img_size:
     w: 256
     h: 256
-  img_crop_size:
-    w: 224
-    h: 224
-  epochs: 10
+
+
+batch_size: 8
+epochs: 10
+
+
+basic_cnn:
+    sent:
+        optim: adam
+        lr: 0.01
+    emo:
+        optim: adam
+        lr: 0.01
+    img_crop_size:
+      w: 227
+      h: 227
+
+vgg:
+    sent:
+        optim: adam
+        lr: 0.01
+    emo:
+        optim: adam
+        lr: 0.01
+    img_crop_size:
+      w: 224
+      h: 224
+
+vgg_finetune:
+    sent:
+        optim: adam
+        lr: 0.01
+    emo:
+        optim: adam
+        lr: 0.01
+    img_crop_size:
+      w: 224
+      h: 224
