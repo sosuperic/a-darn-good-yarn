@@ -1,9 +1,12 @@
 # Create datasets
 
-from collections import defaultdict
+from collections import defaultdict, Counter
 import os
 import re
 import tensorflow as tf
+
+BC_PATH = 'data/Sentibank/Flickr/bi_concepts1553'
+EMOLEX_PATH = 'data/emolex/NRC-emotion-lexicon-wordlevel-alphabetized-v0.92.txt'
 
 class Dataset(object):
     def __init__(self, params):
@@ -62,7 +65,10 @@ class Dataset(object):
 class SentibankDataset(Dataset):
     def __init__(self, params):
         super(SentibankDataset, self).__init__(params)
-        self.bc2sent = self.get_bc2sent()
+        if self.params['obj'] == 'sent':
+            self.bc2sent = self._get_bc2sent()
+        if self.params['obj'] == 'emo':
+            self.bc2emo = self._get_bc2emo()
 
         print self.params
 
@@ -70,6 +76,9 @@ class SentibankDataset(Dataset):
         """Return label from bi_concept string according to the objective (sentiment, emotion, biconcept)"""
         if self.params['obj'] == 'sent':
             return self.bc2sent[bc]
+        if self.params['obj'] == 'emo':
+            # TODO: do we take the max emotion? Currently bc2emo[bc] returns a counter of emotions to counts
+            return self.bc2emo[bc]
         if self.params['obj'] == 'bc':
             # TODO: one hot encode? Will have to know total number of classes tho (some bc's may be skipped)
             return bc
@@ -80,7 +89,7 @@ class SentibankDataset(Dataset):
         labels_list = []
 
         # Iterate through directory, extract labels from biconcept
-        sentibank_img_dir = os.path.join(self.__cwd__, 'data/Sentibank/Flickr/bi_concepts1553')
+        sentibank_img_dir = os.path.join(self.__cwd__, BC_PATH)
         for bc_dir in [d for d in os.listdir(sentibank_img_dir) if not d.startswith('.')]:
             bc_path = os.path.join(sentibank_img_dir, bc_dir)
             bc_files_list = [os.path.join(bc_path, f) for f in os.listdir(bc_path) if f.endswith('jpg')]
@@ -97,8 +106,8 @@ class SentibankDataset(Dataset):
             label = self._get_label(bc_dir)
             bc_labels_list = [label] * len(bc_files_list)
             labels_list += bc_labels_list
-
             break
+
         print files_list
         print labels_list
 
@@ -109,7 +118,8 @@ class SentibankDataset(Dataset):
         # Do more things to img
         return img
 
-    def get_bc2sent(self):
+    ### Function to return data structures for getting labels from biconcept
+    def _get_bc2sent(self):
         """
         Return dictionary mapping bi_concept to positive-negative polarity values
 
@@ -125,6 +135,52 @@ class SentibankDataset(Dataset):
                     bc, sent, _ = m.group(1), float(m.group(2)), int(m.group(3).replace(',', ''))
                     bc2sent_and_count[bc] = sent
         return bc2sent_and_count
+
+    def _get_bc2emo(self):
+        """
+        Use emolex to map bi_concept to emotions. Return dict with bc as key, counts of emotions as values.
+
+        Stats: 857 bc's with at least one emotion (57.3%) , 696 emotions without any emotions
+        """
+        def get_emolex():
+            word2emotions = defaultdict(set)
+            f = open(EMOLEX_PATH, 'rb')
+            i = 0
+            for line in f.readlines():
+                if i > 45:          # Previous lines are readme
+                    word, emotion, flag = line.strip('\n').split()
+                    if emotion == 'positive' or emotion == 'negative':
+                        continue
+                    if int(flag) == 1:
+                        word2emotions[word].add(emotion)
+                i += 1
+            return word2emotions
+
+        bc2emo = defaultdict(list)
+        bc2img_fps = self._get_all_bc_img_fps()
+        word2emotions = get_emolex()
+        for bc, _ in bc2img_fps.items():
+            adj, noun = bc.split('_')
+            if adj in word2emotions:
+                for emotion in word2emotions[adj]:
+                    bc2emo[bc].append(emotion)
+            if noun in word2emotions:
+                for emotion in word2emotions[noun]:
+                    bc2emo[bc].append(emotion)
+            bc2emo[bc] = Counter(bc2emo[bc])
+
+        return bc2emo
+
+    def _get_all_bc_img_fps(self):
+        """Return dictionary mapping bi_concept to list of img file paths"""
+        bc2img_fps = {}
+        for bc in [d for d in os.listdir(BC_PATH) if not d.startswith('.')]:
+            cur_bc_path = os.path.join(BC_PATH, bc)
+            img_fns = [f for f in os.listdir(cur_bc_path) if f.endswith('jpg')]
+            img_fps = [os.path.join(cur_bc_path, fn) for fn in img_fns]
+            bc2img_fps[bc] = img_fps
+
+        return bc2img_fps
 
 
 def get_dataset(params):

@@ -25,18 +25,6 @@ MVSO_PATH = 'data/MVSO'
 
 
 ### bi_concepts1553 related data munging
-
-def get_all_bc_img_fps():
-    """Return dictionary mapping bi_concept to list of img file paths"""
-    bc2img_fps = {}
-    for bc in [d for d in os.listdir(BC_PATH) if not d.startswith('.')]:
-        cur_bc_path = os.path.join(BC_PATH, bc)
-        img_fns = [f for f in os.listdir(cur_bc_path) if f.endswith('jpg')]
-        img_fps = [os.path.join(cur_bc_path, fn) for fn in img_fns]
-        bc2img_fps[bc] = img_fps
-
-    return bc2img_fps
-
 def get_bc_traintest():
     """Return and save dictionary mapping each bc to train/test to positive/negative to path"""
     bc2split2posneg2path = defaultdict(dict)
@@ -68,43 +56,6 @@ def get_bc_traintest():
         f.close()
 
     return bc2split2posneg2path
-
-def get_bc2emotions():
-    """
-    Use emolex to map bi_concept to emotions. Return dict with bc as key, counts of emotions as values.
-
-    Stats: 857 bc's with at least one emotion (57.3%) , 696 emotions without any emotions
-    """
-    def get_emolex():
-        word2emotions = defaultdict(set)
-        f = open(EMOLEX_PATH, 'rb')
-        i = 0
-        for line in f.readlines():
-            if i > 45:          # Previous lines are readme
-                word, emotion, flag = line.strip('\n').split()
-                if emotion == 'positive' or emotion == 'negative':
-                    continue
-                if int(flag) == 1:
-                    word2emotions[word].add(emotion)
-            i += 1
-        return word2emotions
-
-    bc2emotions = defaultdict(list)
-    bc2img_fps = get_all_bc_img_fps()
-    word2emotions = get_emolex()
-    for bc, _ in bc2img_fps.items():
-        # print bc
-        adj, noun = bc.split('_')
-        if adj in word2emotions:
-            for emotion in word2emotions[adj]:
-                bc2emotions[bc].append(emotion)
-        if noun in word2emotions:
-            for emotion in word2emotions[noun]:
-                bc2emotions[bc].append(emotion)
-        bc2emotions[bc] = Counter(bc2emotions[bc])
-
-    return bc2emotions
-
 
 # You image emotion dataset
 def get_you_imemo_urls():
