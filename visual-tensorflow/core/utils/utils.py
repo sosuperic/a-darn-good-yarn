@@ -58,10 +58,10 @@ def combine_cmdline_and_yaml(cmdline, yaml):
     return cmdline_dict
 
 
-def get_optimizer(config):
+def get_optimizer(optim_str, lr):
     """Return tf optimizer"""
-    optim_str = config['model']['optim']
-    lr = config['model']['lr']
+    # optim_str = config['model']['optim']
+    # lr = config['model']['lr']
 
     if optim_str == 'sgd':
         optim = tf.train.GradientDescentOptimizer(lr)

@@ -2,7 +2,10 @@
 img_w: 256
 img_h: 256
 
-batch_size: 8
+img_crop_w: 224
+img_crop_h: 224
+
+batch_size: 16
 epochs: 10
 
 min_bc_class_size: -1
@@ -17,8 +20,6 @@ basic_cnn:
     bc:
         optim: adam
         lr: 0.01
-    img_crop_w: 227
-    img_crop_h: 227
 
 vgg:
     sent:
@@ -30,8 +31,6 @@ vgg:
     bc:
         optim: adam
         lr: 0.01
-    img_crop_w: 224
-    img_crop_h: 224
 
 vgg_finetune:
     sent:
@@ -43,5 +42,3 @@ vgg_finetune:
     bc:
         optim: adam
         lr: 0.01
-    img_crop_w: 224
-    img_crop_h: 224

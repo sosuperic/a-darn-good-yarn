@@ -8,6 +8,12 @@ import tensorflow as tf
 BC_PATH = 'data/Sentibank/Flickr/bi_concepts1553'
 EMOLEX_PATH = 'data/emolex/NRC-emotion-lexicon-wordlevel-alphabetized-v0.92.txt'
 
+
+#######################################################################################################################
+###
+### BASE DATASET CLASS
+###
+########################################################################################################################
 class Dataset(object):
     def __init__(self, params):
         self.params = params
@@ -15,13 +21,36 @@ class Dataset(object):
         self.__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
         self.__cwd__ = os.path.realpath(os.getcwd())
 
+        self.setup_obj()
+
+    def setup_obj(self):
+        """Set up objective specific fields"""
+        if self.params['obj'] == 'sent':
+            self.label_dtype = tf.float32
+        if self.params['obj'] == 'emo':
+            self.label_dtype = tf.int32
+            self.num_labels = 8
+        if self.params['obj'] == 'bc':
+            self.label_dtype = tf.int32
+            # TODO: get num labels
+
+    ####################################################################################################################
+    # Basic getters for public
+    ####################################################################################################################
+    def get_num_pts(self):
+        return self.num_pts
+
+    def get_num_batches(self):
+        return int(self.num_pts / self.params['batch_size'])
+
+    def get_num_labels(self):
+        return self.num_labels
+
+    ####################################################################################################################
     # Methods implemented / added to by specific datasets
+    ####################################################################################################################
     def get_files_labels_list(self):
         """Returns list of files and list of labels for use by tf input queue"""
-        pass
-
-    def get_splits(self):
-        """TODO: train/valid/test"""
         pass
 
     def preprocess_img(self, img):
@@ -31,10 +60,9 @@ class Dataset(object):
         img = tf.cast(img, tf.float32)
         return img
 
-    # Methods used by all datasets
-    def get_num_pts(self):
-        return self.num_pts
-
+    ####################################################################################################################
+    # Create pipeline, graph, train/valid/test splits for use by network
+    ####################################################################################################################
     def _read_images_from_disk(self, input_queue):
         file_contents, label = tf.read_file(input_queue[0]), input_queue[1]
         img = tf.image.decode_jpeg(file_contents, channels=3)
@@ -52,38 +80,69 @@ class Dataset(object):
     def setup_graph(self):
         self.files_list, self.labels_list = self.get_files_labels_list()
         self.files_tensor = tf.convert_to_tensor(self.files_list, dtype=tf.string)
-        self.labels_tensor = tf.convert_to_tensor(self.labels_list, dtype=tf.int32)
+        self.labels_tensor = tf.convert_to_tensor(self.labels_list, dtype=self.label_dtype)
         self.img, self.label = self._input_pipeline(self.files_tensor, self.labels_tensor)
         self.img = self.preprocess_img(self.img)
         self.img_batch, self.label_batch = tf.train.batch([self.img, self.label],
                                                           batch_size=self.params['batch_size'])
         return self.img_batch, self.label_batch
 
-    def test(self):
-        return 2
+    def get_splits(self):
+        """TODO: train/valid/test"""
+        pass
 
+########################################################################################################################
+###
+### SENTIBANK DATASET
+###
+########################################################################################################################
 class SentibankDataset(Dataset):
     def __init__(self, params):
         super(SentibankDataset, self).__init__(params)
+
         if self.params['obj'] == 'sent':
             self.bc2sent = self._get_bc2sent()
         if self.params['obj'] == 'emo':
             self.bc2emo = self._get_bc2emo()
 
-        print self.params
+    ####################################################################################################################
+    # Getting labels
+    ####################################################################################################################
+    def _map_label_to_int(self, label):
+        """Map emo and bc string labels to int"""
+        if self.params['obj'] == 'emo':
+            d = {'anger': 0, 'anticipation': 1, 'disgust': 2, 'fear': 3,
+                 'joy': 4, 'sadness': 5, 'surprise':6, 'trust':7}
+            return d[label]
+        # TODO: bc
 
     def _get_label(self, bc):
-        """Return label from bi_concept string according to the objective (sentiment, emotion, biconcept)"""
+        """
+        Return label from bi_concept string according to the objective (sentiment, emotion, biconcept)
+
+        Handful of cases for sent where label doesn't exist. For example, candid_guy
+        """
         if self.params['obj'] == 'sent':
-            return self.bc2sent[bc]
+            if bc in self.bc2sent:
+                return self.bc2sent[bc]
+            else:
+                # print '{} not in bc2sent'.format(bc)
+                return None
         if self.params['obj'] == 'emo':
             # TODO: do we take the max emotion? Currently bc2emo[bc] returns a counter of emotions to counts
-            return self.bc2emo[bc]
+            if len(self.bc2emo[bc]) > 0:
+                emo = max(self.bc2emo[bc])
+                label = self._map_label_to_int(emo)
+                return label
+            else:       # no emotions for biconcept
+                return None
         if self.params['obj'] == 'bc':
             # TODO: one hot encode? Will have to know total number of classes tho (some bc's may be skipped)
             return bc
 
-    # Override parent method
+    ####################################################################################################################
+    # Overriding / adding to parent methods
+    ####################################################################################################################
     def get_files_labels_list(self):
         files_list = []
         labels_list = []
@@ -99,17 +158,19 @@ class SentibankDataset(Dataset):
                 if len(bc_files_list) < self.params['min_bc_class_size']:
                     continue
 
+            # Skip this category if label doesn't exist
+            label = self._get_label(bc_dir)
+            if label is None:
+                continue
+
             # Add all images
             files_list += bc_files_list
 
             # Add all labels
-            label = self._get_label(bc_dir)
             bc_labels_list = [label] * len(bc_files_list)
             labels_list += bc_labels_list
-            break
 
-        print files_list
-        print labels_list
+        self.num_pts = len(files_list)
 
         return files_list, labels_list
 
@@ -118,6 +179,9 @@ class SentibankDataset(Dataset):
         # Do more things to img
         return img
 
+    ####################################################################################################################
+    # Getting data structures for each objective
+    ####################################################################################################################
     ### Function to return data structures for getting labels from biconcept
     def _get_bc2sent(self):
         """
