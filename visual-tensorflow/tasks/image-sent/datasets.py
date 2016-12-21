@@ -25,8 +25,12 @@ class Dataset(object):
 
     def setup_obj(self):
         """Set up objective specific fields"""
-        if self.params['obj'] == 'sent':
-            self.label_dtype = tf.float32
+        if self.params['obj'] == 'sent_class':
+            self.label_dtype = tf.int32
+            self.num_labels = 2
+        # if self.params['obj'] == 'sent_reg':
+        #     self.label_dtype = tf.float32
+        #     # TODO:
         if self.params['obj'] == 'emo':
             self.label_dtype = tf.int32
             self.num_labels = 8
@@ -100,7 +104,9 @@ class SentibankDataset(Dataset):
     def __init__(self, params):
         super(SentibankDataset, self).__init__(params)
 
-        if self.params['obj'] == 'sent':
+    def setup_obj(self):
+        super(SentibankDataset, self).setup_obj()
+        if self.params['obj'] == 'sent_class':
             self.bc2sent = self._get_bc2sent()
         if self.params['obj'] == 'emo':
             self.bc2emo = self._get_bc2emo()
@@ -110,9 +116,13 @@ class SentibankDataset(Dataset):
     ####################################################################################################################
     def _map_label_to_int(self, label):
         """Map emo and bc string labels to int"""
+        if self.params['obj'] == 'sent_class':
+            label = 'neg' if label < 0 else 'pos'
+            d = {'neg': 0, 'pos': 1}
+            return d[label]
         if self.params['obj'] == 'emo':
             d = {'anger': 0, 'anticipation': 1, 'disgust': 2, 'fear': 3,
-                 'joy': 4, 'sadness': 5, 'surprise':6, 'trust':7}
+                 'joy': 4, 'sadness': 5, 'surprise': 6, 'trust': 7}
             return d[label]
         # TODO: bc
 
@@ -122,18 +132,15 @@ class SentibankDataset(Dataset):
 
         Handful of cases for sent where label doesn't exist. For example, candid_guy
         """
-        if self.params['obj'] == 'sent':
+        if self.params['obj'] == 'sent_class':
             if bc in self.bc2sent:
-                return self.bc2sent[bc]
+                return self._map_label_to_int(self.bc2sent[bc])
             else:
-                # print '{} not in bc2sent'.format(bc)
                 return None
         if self.params['obj'] == 'emo':
-            # TODO: do we take the max emotion? Currently bc2emo[bc] returns a counter of emotions to counts
             if len(self.bc2emo[bc]) > 0:
                 emo = max(self.bc2emo[bc])
-                label = self._map_label_to_int(emo)
-                return label
+                return self._map_label_to_int(emo)
             else:       # no emotions for biconcept
                 return None
         if self.params['obj'] == 'bc':
@@ -156,6 +163,13 @@ class SentibankDataset(Dataset):
             # If objective is predicting bc class, skip biconcept if not enough images
             if self.params['obj'] == 'bc':
                 if len(bc_files_list) < self.params['min_bc_class_size']:
+                    continue
+
+            # If objective is predicting sentiment class (pos/neg), skip biconcept if it's neutral-ish
+            if self.params['obj'] == 'sent_class':
+                if bc_dir not in self.bc2sent:
+                    continue
+                if abs(self.bc2sent[bc_dir]) < self.params['min_sent_absval']:
                     continue
 
             # Skip this category if label doesn't exist

@@ -22,7 +22,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', dest='arch', default='basic_cnn',
                         help='what architecture to use: basic_cnn,vgg,vgg_finetune,attention')
     parser.add_argument('-obj', dest='obj', default='sent',
-                        help='What to predict: sent,emo,bc')
+                        help='What to predict: sent_class,emo,bc')
 
     # General training params
     parser.add_argument('-bs', dest='batch_size', type=int, default=None, help='batch size')

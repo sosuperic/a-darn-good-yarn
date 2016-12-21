@@ -183,9 +183,10 @@ def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256,
 
 ### MVSO
 import pprint
-# bc2sentiment = get_MVSO_bc2sentiment()
-# pprint.pprint(bc2sentiment)
+bc2sentiment = get_MVSO_bc2sentiment()
+pprint.pprint(bc2sentiment)
+print len([bc for bc, s in bc2sentiment.items() if abs(s) > 0.6])
 # print len(bc2sentiment.keys())
 # bc2emo2val = get_MVSO_bc2emotion2value()
 # pprint.pprint(bc2emo2val)
-download_MVSO_imgs()
+# download_MVSO_imgs()
