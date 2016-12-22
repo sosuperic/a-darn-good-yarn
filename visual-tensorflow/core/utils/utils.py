@@ -1,5 +1,6 @@
 # Utilities
 
+import os
 import tensorflow as tf
 import yaml
 
@@ -59,6 +60,20 @@ def combine_cmdline_and_yaml(cmdline, yaml):
     add_remaining_kvs(yaml)
 
     return cmdline_dict
+
+# Set up gpu
+def _convert_gpuids_to_nvidiasmi(cmdline_gpus):
+    """Return inverse mapping - setting device 3 shows up as gpu 0 in nvidia-smi"""
+    if cmdline_gpus is None:
+        return ''
+    else:
+        gpus = [int(id) for id in cmdline_gpus.split(',')]
+        gpus = [str(3-id) for id in gpus]
+        gpus = ','.join(gpus)
+        return gpus
+
+def setup_gpus(cmdline_gpus):
+    os.environ["CUDA_VISIBLE_DEVICES"] = _convert_gpuids_to_nvidiasmi(cmdline_gpus)
 
 
 def get_optimizer(optim_str, lr):

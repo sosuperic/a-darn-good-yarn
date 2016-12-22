@@ -3,7 +3,7 @@
 import argparse
 import os
 
-from core.utils.utils import read_yaml, combine_cmdline_and_yaml
+from core.utils.utils import combine_cmdline_and_yaml, read_yaml, setup_gpus
 
 from network import Network
 # Load and parse config
@@ -19,6 +19,7 @@ if __name__ == '__main__':
     parser.add_argument('--sent_neutral_absval', dest='sent_neutral_absval', type=float, default=None,
                         help='defines ranges [-val,val] for neutral. Images are ignored in this range for sent_biclass,\
                              while images in this range are used as neutral class for sent_triclass obj')
+    parser.add_argument('--gpus', dest='gpus', default=None, help='gpu_ids to use')
 
     # Basic params for which job (architecture, classification goal) we're running
     # This corresponds to the training parameters set in config.yaml
@@ -57,6 +58,10 @@ if __name__ == '__main__':
     import pprint
     pprint.pprint(params)
 
+    # Set up GPUs
+    setup_gpus(params['gpus'])
+
+    # Get network and train/test
     network = Network(params)
     if params['mode'] == 'train':
         network.train()
