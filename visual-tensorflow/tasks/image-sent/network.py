@@ -41,13 +41,14 @@ class Network(object):
             # Get data
             self.logger.info('Retrieving training data and setting up graph')
             splits = self.dataset.setup_graph()
-            img_batch, label_batch = splits['train']['img_batch'], splits['train']['label_batch']
+            tr_img_batch, tr_label_batch = splits['train']['img_batch'], splits['train']['label_batch']
+            va_img_batch, va_label_batch = splits['train']['img_batch'], splits['train']['label_batch']
 
             # Loss
             if self.params['obj'] == 'sent_reg':
-                loss = tf.sqrt(tf.reduce_mean(tf.square(tf.sub(model.last_fc, label_batch))))
+                loss = tf.sqrt(tf.reduce_mean(tf.square(tf.sub(model.last_fc, tr_label_batch))))
             else:
-                labels_onehot = tf.one_hot(label_batch, output_dim)     # (batch_size, num_classes)
+                labels_onehot = tf.one_hot(tr_label_batch, output_dim)     # (batch_size, num_classes)
                 loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(model.probs, labels_onehot))
 
             # Optimize
@@ -67,9 +68,15 @@ class Network(object):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_batches = self.dataset.get_num_batches('train')
                 for j in range(num_batches):
-                    _, loss_val = sess.run([train_step, loss], feed_dict={'img_batch:0': img_batch.eval()})
-                    self.logger.info('Loss: {}'.format(loss_val))
+                    _, loss_val = sess.run([train_step, loss], feed_dict={'img_batch:0': tr_img_batch.eval()})
+                    self.logger.info('Minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
                     break
+
+                # Evaluate on validation set (potentially)
+                num_batches = self.dataset.get_num_batches('valid')
+                for j in range(num_batches):
+                    loss_val = sess.run(loss, feed_dict={'img_batch:0': va_img_batch.eval()})
+                    self.logger.info('Minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
 
                 # Save model at end of epoch (potentially)
                 save_model(sess, saver, self.params, i, self.logger)
