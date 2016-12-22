@@ -3,7 +3,7 @@
 import argparse
 import os
 
-from core.utils.utils import combine_cmdline_and_yaml, read_yaml, setup_gpus
+from core.utils.utils import combine_cmdline_and_yaml, make_checkpoint_dir, read_yaml, setup_gpus
 
 from network import Network
 # Load and parse config
@@ -19,7 +19,6 @@ if __name__ == '__main__':
     parser.add_argument('--sent_neutral_absval', dest='sent_neutral_absval', type=float, default=None,
                         help='defines ranges [-val,val] for neutral. Images are ignored in this range for sent_biclass,\
                              while images in this range are used as neutral class for sent_triclass obj')
-    parser.add_argument('--gpus', dest='gpus', default=None, help='gpu_ids to use')
 
     # Basic params for which job (architecture, classification goal) we're running
     # This corresponds to the training parameters set in config.yaml
@@ -46,6 +45,13 @@ if __name__ == '__main__':
     parser.add_argument('-dd', dest='deepdream', action='store_true', default=False,
                         help='produce deep dream hallucinations of filters')
 
+    # Bookkeeping, checkpointing, etc.
+    parser.add_argument('--save_every_epoch', dest='save_every_epoch', type=int, default=5,
+                        help='save model every epoch')
+    parser.add_argument('--val_every_epoch', dest='val_every_epoch', type=int, default=1,
+                        help='evaluate on validation set every _ epochs')
+    parser.add_argument('--gpus', dest='gpus', default=None, help='gpu_ids to use')
+
     cmdline = parser.parse_args()
 
     # Read config from yaml
@@ -60,6 +66,11 @@ if __name__ == '__main__':
 
     # Set up GPUs
     setup_gpus(params['gpus'])
+
+    # Make checkpoint directory
+    checkpoints_dir = os.path.join(__location__, 'checkpoints')
+    make_checkpoint_dir(checkpoints_dir, params)
+
 
     # Get network and train/test
     network = Network(params)

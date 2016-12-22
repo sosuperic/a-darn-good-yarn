@@ -1,9 +1,14 @@
 # Utilities
 
+import json
 import os
+from time import gmtime, strftime
 import tensorflow as tf
 import yaml
 
+########################################################################################################################
+# Set up, boilerplate, etc.
+########################################################################################################################
 def read_yaml(path):
     """Return dict from parsed yaml"""
     with open(path, 'r') as f:
@@ -61,7 +66,6 @@ def combine_cmdline_and_yaml(cmdline, yaml):
 
     return cmdline_dict
 
-# Set up gpu
 def _convert_gpuids_to_nvidiasmi(cmdline_gpus):
     """Return inverse mapping - setting device 3 shows up as gpu 0 in nvidia-smi"""
     if cmdline_gpus is None:
@@ -75,7 +79,18 @@ def _convert_gpuids_to_nvidiasmi(cmdline_gpus):
 def setup_gpus(cmdline_gpus):
     os.environ["CUDA_VISIBLE_DEVICES"] = _convert_gpuids_to_nvidiasmi(cmdline_gpus)
 
+def make_checkpoint_dir(checkpoints_dir, params):
+    """Make checkpoint dir with timestamp as name, save params as json"""
+    cur_time_str = strftime("%Y-%m-%d___%H-%M-%S", gmtime())
+    save_dir = os.path.join(checkpoints_dir, cur_time_str)
+    os.makedirs(save_dir)
 
+    with open(os.path.join(save_dir, 'params.json'), 'w') as f:
+        json.dump(params, f)
+
+########################################################################################################################
+# Neural networks
+########################################################################################################################
 def get_optimizer(optim_str, lr):
     """Return tf optimizer"""
     # optim_str = config['model']['optim']
