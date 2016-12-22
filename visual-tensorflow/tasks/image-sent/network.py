@@ -51,12 +51,30 @@ class Network(object):
                 labels_onehot = tf.one_hot(tr_label_batch, output_dim)     # (batch_size, num_classes)
                 loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(model.probs, labels_onehot))
 
-            # Optimize
+                # Accuracy
+                acc = tf.equal(tf.cast(tf.argmax(model.probs, 1), tf.int32), tr_label_batch)
+                acc = tf.reduce_mean(tf.cast(acc, tf.float32))
+
+            # Optimize - split into two steps (get gradients and then apply so we can create summary vars)
             optimizer = get_optimizer(self.params['optim'], self.params['lr'])
-            train_step = optimizer.minimize(loss)
+            grads = tf.gradients(loss, tf.trainable_variables())
+            grads_and_vars = list(zip(grads, tf.trainable_variables()))
+            train_step = optimizer.apply_gradients(grads_and_vars=grads_and_vars)
+
+            # Summary ops
+            tf.summary.scalar('loss', loss)
+            if self.params['obj'] != 'sent_reg':    # classification, thus has accuracy
+                tf.summary.scalar('accuracy', acc)
+            for var in tf.trainable_variables():
+                tf.summary.histogram(var.op.name, var)
+            for grad, var in grads_and_vars:
+                print var.op.name, var.op.name is None, grad is None
+                tf.summary.histogram(var.op.name+'/gradient', grad)
+            summary_op = tf.summary.merge_all()
+            summary_writer = tf.summary.FileWriter(self.params['save_dir'], graph=tf.get_default_graph())
 
             # Initialize after optimization - this needs to be done after adam
-            sess.run(tf.initialize_all_variables())
+            sess.run(tf.global_variables_initializer())
 
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -68,15 +86,19 @@ class Network(object):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_batches = self.dataset.get_num_batches('train')
                 for j in range(num_batches):
-                    _, loss_val = sess.run([train_step, loss], feed_dict={'img_batch:0': tr_img_batch.eval()})
+                    _, loss_val, acc_val, summary = sess.run([train_step, loss, acc, summary_op], feed_dict={'img_batch:0': tr_img_batch.eval()})
                     self.logger.info('Minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
-                    break
+                    self.logger.info('................... -- Acc: {}'.format(acc_val))
+
+                    # Write summary
+                    summary_writer.add_summary(summary, i * num_batches + j)
 
                 # Evaluate on validation set (potentially)
                 num_batches = self.dataset.get_num_batches('valid')
                 for j in range(num_batches):
                     loss_val = sess.run(loss, feed_dict={'img_batch:0': va_img_batch.eval()})
                     self.logger.info('Minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
+
 
                 # Save model at end of epoch (potentially)
                 save_model(sess, saver, self.params, i, self.logger)

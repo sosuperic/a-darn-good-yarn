@@ -25,7 +25,7 @@ class BasicVizsentCNN(object):
 
         with tf.variable_scope('convpool2'):
             self.conv2 = self.conv(self.pool1, [5, 5, 96, 256], [256], [1, 2, 2, 1])
-            self.pool2 =  tf.nn.max_pool(self.conv1, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
+            self.pool2 =  tf.nn.max_pool(self.conv2, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
             # TODO: Normalization?
 
         with tf.variable_scope('fc') as scope:
