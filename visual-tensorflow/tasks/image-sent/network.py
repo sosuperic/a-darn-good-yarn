@@ -16,7 +16,8 @@ class Network(object):
     def train(self):
         """Train"""
         logs_path = os.path.join(os.path.dirname(__file__), 'logs')
-        _, self.logger = setup_logging(save_path=os.path.join(logs_path, 'train.log'))
+        _, self.logger = setup_logging(save_path=os.path.join(
+            logs_path, 'train-{}-{}.log'.format(self.params['arch'], self.params['obj'])))
         # _, self.logger = setup_logging(save_path=logs_path)
 
         with tf.Session() as sess:
@@ -68,10 +69,10 @@ class Network(object):
             for var in tf.trainable_variables():
                 tf.summary.histogram(var.op.name, var)
             for grad, var in grads_and_vars:
-                print var.op.name, var.op.name is None, grad is None
                 tf.summary.histogram(var.op.name+'/gradient', grad)
             summary_op = tf.summary.merge_all()
-            summary_writer = tf.summary.FileWriter(self.params['save_dir'], graph=tf.get_default_graph())
+            tr_summary_writer = tf.summary.FileWriter(self.params['save_dir'] + '/train', graph=tf.get_default_graph())
+            va_summary_writer = tf.summary.FileWriter(self.params['save_dir'] + '/valid', graph=tf.get_default_graph())
 
             # Initialize after optimization - this needs to be done after adam
             sess.run(tf.global_variables_initializer())
@@ -86,19 +87,29 @@ class Network(object):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_batches = self.dataset.get_num_batches('train')
                 for j in range(num_batches):
-                    _, loss_val, acc_val, summary = sess.run([train_step, loss, acc, summary_op], feed_dict={'img_batch:0': tr_img_batch.eval()})
-                    self.logger.info('Minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
+                    _, loss_val, acc_val, summary = sess.run([train_step, loss, acc, summary_op],
+                                                             feed_dict={'img_batch:0': tr_img_batch.eval()})
+                    self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
                     self.logger.info('................... -- Acc: {}'.format(acc_val))
 
                     # Write summary
-                    summary_writer.add_summary(summary, i * num_batches + j)
+                    if j % 10 == 0:
+                        tr_summary_writer.add_summary(summary, i * num_batches + j)
+
+                    # if j > 5:
+                    #     break
 
                 # Evaluate on validation set (potentially)
                 num_batches = self.dataset.get_num_batches('valid')
                 for j in range(num_batches):
-                    loss_val = sess.run(loss, feed_dict={'img_batch:0': va_img_batch.eval()})
-                    self.logger.info('Minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
+                    loss_val, acc_val, summary = sess.run([loss, acc, summary_op],
+                                                          feed_dict={'img_batch:0': va_img_batch.eval()})
+                    self.logger.info('Valid minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
+                    self.logger.info('................... -- Acc: {}'.format(acc_val))
 
+                    # Write summary
+                    if j % 10 == 0:
+                        va_summary_writer.add_summary(summary, i * num_batches + j)
 
                 # Save model at end of epoch (potentially)
                 save_model(sess, saver, self.params, i, self.logger)
