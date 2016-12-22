@@ -20,11 +20,12 @@ class vgg16(object):
         self.parameters = []
         self.convlayers()
         self.fc_layers()
-        self.probs = tf.nn.softmax(self.fc3l)
+        self.probs = tf.nn.softmax(self.fc4l)
         if (sess is not None) and load_weights:
             self.load_weights(sess)
 
     def load_weights(self, sess):
+        print 'Loading VGG weights'
         weights = np.load(os.path.join(__location__, 'vgg16_weights.npz'))
         keys = sorted(weights.keys())
         for i, k in enumerate(keys):
@@ -243,13 +244,27 @@ class vgg16(object):
 
         # fc3
         with tf.name_scope('fc3') as scope:
-            fc3w = tf.Variable(tf.truncated_normal([4096, self.output_dim],
+            fc3w = tf.Variable(tf.truncated_normal([4096, 1000],
+            # fc3w = tf.Variable(tf.truncated_normal([4096, self.output_dim],
                                                          dtype=tf.float32,
                                                          stddev=1e-1), name='weights')
-            fc3b = tf.Variable(tf.constant(1.0, shape=[self.output_dim], dtype=tf.float32),
+            fc3b = tf.Variable(tf.constant(1.0, shape=[1000], dtype=tf.float32),
                                  trainable=True, name='biases')
-            self.fc3l = tf.nn.bias_add(tf.matmul(self.fc2, fc3w), fc3b)
+            fc3l = tf.nn.bias_add(tf.matmul(self.fc2, fc3w), fc3b)
+            self.fc3 = tf.nn.relu(fc3l)
             self.parameters += [fc3w, fc3b]
+
+        # extra fc to go from 1000 classes (imagenet) to num of classes for fine-tuning task
+        with tf.name_scope('fc4') as scope:
+            fc4w = tf.Variable(tf.truncated_normal([1000, self.output_dim],
+                                                   dtype=tf.float32,
+                                                   stddev=1e-1), name='weights')
+            fc4b = tf.Variable(tf.constant(1.0, shape=[self.output_dim], dtype=tf.float32),
+                               trainable=True, name='biases')
+            self.fc4l = tf.nn.bias_add(tf.matmul(self.fc3, fc4w), fc4b)
+            self.parameters += [fc4w, fc4b]
+
+
 
     ###################################################################################################################
 

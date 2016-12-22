@@ -170,6 +170,7 @@ class SentibankDataset(Dataset):
                 if bc_dir not in self.bc2sent:
                     continue
                 if abs(self.bc2sent[bc_dir]) < self.params['min_sent_absval']:
+                    print bc_dir, self.bc2sent[bc_dir]
                     continue
 
             # Skip this category if label doesn't exist

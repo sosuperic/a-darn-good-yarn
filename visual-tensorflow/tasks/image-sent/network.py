@@ -28,7 +28,7 @@ class Network(object):
                               w=self.params['img_crop_w'],
                               h=self.params['img_crop_h'],
                               sess=sess,
-                              load_weights=True,
+                              load_weights=self.params['load_weights'],
                               output_dim=num_classes)
 
             # Get data
