@@ -157,13 +157,13 @@ def get_optimizer(optim_str, lr):
 
     return optim
 
-def save_model(sess, saver, params, i):
+def save_model(sess, saver, params, i, logger):
     """Save model potentially"""
     if (i+1) % params['save_every_epoch'] == 0:
         out_file = saver.save(sess,
                               os.path.join(params['save_dir'], _get_ckpt_basename(params)),
                               global_step=i)
-        print 'Model saved in file: {}'.format(out_file)
+        logger.info('Model saved in file: {}'.format(out_file))
 
 def load_model(sess, params):
     """Load model from checkpoint"""

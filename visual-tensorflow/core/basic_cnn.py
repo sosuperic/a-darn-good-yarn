@@ -20,14 +20,13 @@ class BasicVizsentCNN(object):
         with tf.variable_scope('convpool1'):
             self.conv1 = self.conv(self.img_batch, [11, 11, 3, 96], [96], [1, 4, 4, 1])
             self.pool1 =  tf.nn.max_pool(self.conv1, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
-            print self.pool1.get_shape()
+            # print self.pool1.get_shape()
             # TODO: Normalization?
 
         with tf.variable_scope('convpool2'):
             self.conv2 = self.conv(self.pool1, [5, 5, 96, 256], [256], [1, 2, 2, 1])
             self.pool2 =  tf.nn.max_pool(self.conv1, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
             # TODO: Normalization?
-            print self.pool2.get_shape()
 
         with tf.variable_scope('fc') as scope:
             self.reshaped = tf.reshape(self.pool2, [self.batch_size, -1])     # (B,  _)

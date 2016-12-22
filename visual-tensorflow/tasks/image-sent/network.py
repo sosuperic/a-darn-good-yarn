@@ -18,6 +18,7 @@ class Network(object):
         logs_path = os.path.join(os.path.dirname(__file__), 'logs')
         _, self.logger = setup_logging(save_path=os.path.join(logs_path, 'train.log'))
         # _, self.logger = setup_logging(save_path=logs_path)
+
         with tf.Session() as sess:
             # Get model
             model = None
@@ -38,7 +39,9 @@ class Network(object):
                               output_dim=output_dim)
 
             # Get data
-            img_batch, label_batch = self.dataset.setup_graph()
+            self.logger.info('Retrieving training data and setting up graph')
+            splits = self.dataset.setup_graph()
+            img_batch, label_batch = splits['train']['img_batch'], splits['train']['label_batch']
 
             # Loss
             if self.params['obj'] == 'sent_reg':
@@ -60,16 +63,16 @@ class Network(object):
             # Training
             saver = tf.train.Saver(max_to_keep=None)
             for i in range(self.params['epochs']):
+                self.logger.info('Epoch {}'.format(i))
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
-                num_batches = self.dataset.get_num_batches()
+                num_batches = self.dataset.get_num_batches('train')
                 for j in range(num_batches):
-                    # print sess.run(basic_cnn.fc4, feed_dict={'img_batch:0': img_batch.eval()}).shape
                     _, loss_val = sess.run([train_step, loss], feed_dict={'img_batch:0': img_batch.eval()})
-                    print loss_val
-                    # break
+                    self.logger.info('Loss: {}'.format(loss_val))
+                    break
 
                 # Save model at end of epoch (potentially)
-                save_model(sess, saver, self.params, i)
+                save_model(sess, saver, self.params, i, self.logger)
 
             coord.request_stop()
             coord.join(threads)

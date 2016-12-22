@@ -1,6 +1,7 @@
 # Create datasets
 
 from collections import defaultdict, Counter
+import numpy as np
 import os
 import re
 import tensorflow as tf
@@ -44,11 +45,11 @@ class Dataset(object):
     ####################################################################################################################
     # Basic getters for public
     ####################################################################################################################
-    def get_num_pts(self):
-        return self.num_pts
+    def get_num_pts(self, split):
+        return self.num_pts[split]
 
-    def get_num_batches(self):
-        return int(self.num_pts / self.params['batch_size'])
+    def get_num_batches(self, split):
+        return self.num_batches[split]
 
     def get_output_dim(self):
         return self.output_dim
@@ -85,18 +86,48 @@ class Dataset(object):
         return img, label
 
     def setup_graph(self):
+        """
+        Get lists of data, convert to tensors, set up pipeline
+        """
         self.files_list, self.labels_list = self.get_files_labels_list()
         self.files_tensor = tf.convert_to_tensor(self.files_list, dtype=tf.string)
         self.labels_tensor = tf.convert_to_tensor(self.labels_list, dtype=self.label_dtype)
-        self.img, self.label = self._input_pipeline(self.files_tensor, self.labels_tensor)
-        self.img = self.preprocess_img(self.img)
-        self.img_batch, self.label_batch = tf.train.batch([self.img, self.label],
-                                                          batch_size=self.params['batch_size'])
-        return self.img_batch, self.label_batch
 
-    def get_splits(self):
-        """TODO: train/valid/test"""
-        pass
+        split_indices = self._get_split_indices(len(self.files_list))
+        self.files_splits = tf.dynamic_partition(self.files_tensor, split_indices, 3)
+        self.labels_splits = tf.dynamic_partition(self.labels_tensor, split_indices, 3)
+
+        self.splits = defaultdict(dict)
+        split_names = {0: 'train', 1: 'valid', 2: 'test'}
+        for i in range(3):
+            name = split_names[i]
+            img, label = self._input_pipeline(self.files_splits[i], self.labels_splits[i])
+            img = self.preprocess_img(img)
+            self.splits[name]['img'] = img
+            self.splits[name]['label'] = label
+            img_batch, label_batch = tf.train.batch([img, label], batch_size=self.params['batch_size'])
+            self.splits[name]['img_batch'] = img_batch
+            self.splits[name]['label_batch'] = label_batch
+
+        return self.splits
+
+    def _get_split_indices(self, num_pts, split=[0.8, 0.1, 0.1]):
+        """Return vector s of length num_pts, value in s[i] is partition index """
+        num_tr = int(num_pts * split[0])
+        num_va = int(num_pts * split[1])
+        num_te = num_pts - num_tr - num_va
+        tr = np.zeros(num_tr)
+        va = np.ones(num_va)
+        te = 2 * np.ones(num_te)
+        splits = np.hstack([tr, va, te])
+        np.random.seed(123)         # set seed for reproducibility
+        np.random.shuffle(splits)
+
+        # Set fields for minibatching
+        self.num_pts = {'train': num_tr, 'valid': num_va, 'test': num_te}
+        self.num_batches = {k: int(v / self.params['batch_size']) for k,v in self.num_pts.items()}
+
+        return splits
 
 ########################################################################################################################
 ###
@@ -205,8 +236,6 @@ class SentibankDataset(Dataset):
             # Add all labels
             bc_labels_list = [label] * len(bc_files_list)
             labels_list += bc_labels_list
-
-        self.num_pts = len(files_list)
 
         return files_list, labels_list
 
