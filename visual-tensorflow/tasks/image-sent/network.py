@@ -23,12 +23,13 @@ class Network(object):
                                         img_w=self.params['img_crop_w'],
                                         img_h=self.params['img_crop_h'],
                                         output_dim=num_classes)
-            elif self.params['arch'] == 'vgg':
+            elif 'vgg' in self.params['arch']:
+                load_weights = True if self.params['arch'] == 'vgg_finetune' else False
                 model = vgg16(batch_size=self.params['batch_size'],
                               w=self.params['img_crop_w'],
                               h=self.params['img_crop_h'],
                               sess=sess,
-                              load_weights=self.params['load_weights'],
+                              load_weights=load_weights,
                               output_dim=num_classes)
 
             # Get data

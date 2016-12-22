@@ -24,8 +24,6 @@ if __name__ == '__main__':
     # This corresponds to the training parameters set in config.yaml
     parser.add_argument('-a', '--arch', dest='arch', default='basic_cnn',
                         help='what architecture to use: basic_cnn,vgg,vgg_finetune,attention')
-    parser.add_argument('--load_weights', dest='load_weights', action='store_true', default=False,
-                        help='load pre-trained vgg weights')
     parser.add_argument('-obj', dest='obj', default='sent',
                         help='What to predict: sent_biclass,sent_triclass,emo,bc')
 
