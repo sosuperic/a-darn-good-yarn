@@ -6,7 +6,7 @@ import tensorflow as tf
 from datasets import get_dataset
 from core.basic_cnn import BasicVizsentCNN
 from core.vgg.vgg16 import vgg16
-from core.utils.utils import get_optimizer, load_model, save_model
+from core.utils.utils import get_optimizer, load_model, save_model, setup_logging
 
 class Network(object):
     def __init__(self, params):
@@ -15,10 +15,14 @@ class Network(object):
 
     def train(self):
         """Train"""
+        logs_path = os.path.join(os.path.dirname(__file__), 'logs')
+        _, self.logger = setup_logging(save_path=os.path.join(logs_path, 'train.log'))
+        # _, self.logger = setup_logging(save_path=logs_path)
         with tf.Session() as sess:
             # Get model
             model = None
             output_dim = self.dataset.get_output_dim()
+            self.logger.info('Making {} model'.format(self.params['arch']))
             if self.params['arch'] == 'basic_cnn':
                 model = BasicVizsentCNN(batch_size=self.params['batch_size'],
                                         img_w=self.params['img_crop_w'],

@@ -58,16 +58,17 @@ if __name__ == '__main__':
 
     # Read config from yaml
     __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
-    __cwd__ = os.path.realpath(os.getcwd())
     config = read_yaml(os.path.join(__location__, 'config.yaml'))
 
     # Combine command line arguments and config
     params = combine_cmdline_and_yaml(cmdline, config)
-    import pprint
-    pprint.pprint(params)
 
     # Set up GPUs
     setup_gpus(params['gpus'])
+
+    # Print params
+    import pprint
+    pprint.pprint(params)
 
     # Train / test
     if params['mode'] == 'train':
