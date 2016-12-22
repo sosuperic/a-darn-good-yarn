@@ -32,12 +32,12 @@ def combine_cmdline_and_yaml(cmdline, yaml):
     """
     cmdline_dict = vars(cmdline)
 
-    possible_general_overwrites = ['batch_size', 'epochs']
-    for param in possible_general_overwrites:
-        if cmdline_dict[param] is None:
-            cmdline_dict[param] = yaml[param]
+    # possible_general_overwrites = ['batch_size', 'epochs']
+    # for param in possible_general_overwrites:
+    #     if cmdline_dict[param] is None:
+    #         cmdline_dict[param] = yaml[param]
 
-    # Job-specific, i.e. params for given architecture, objective, etc.
+    # Job-specific, i.e. params for the given architecture + objective, etc.
     possible_job_overwrites = ['lr', 'optim']
     arch = cmdline_dict['arch']
     obj = cmdline_dict['obj']
@@ -45,13 +45,16 @@ def combine_cmdline_and_yaml(cmdline, yaml):
         if cmdline_dict[param] is None:
             cmdline_dict[param] = yaml[arch][obj][param]
 
-    # Add all key-values that aren't in cmdline_dict just to make sure (e.g. img_crop_h not in argparse)
+    # Add all key-values that aren't in cmdline_dict (or are None)
     def add_remaining_kvs(yaml):
         for k,v in yaml.items():
             if isinstance(v, dict):
                 add_remaining_kvs(v)
             else:
-                if k not in cmdline_dict:
+                if k in cmdline_dict:
+                    if cmdline_dict[k] is None:
+                        cmdline_dict[k] = v
+                elif k not in cmdline_dict:
                     cmdline_dict[k] = v
     add_remaining_kvs(yaml)
 

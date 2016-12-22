@@ -25,16 +25,19 @@ class Dataset(object):
 
     def setup_obj(self):
         """Set up objective specific fields"""
-        if self.params['obj'] == 'sent_class':
+        if self.params['obj'] == 'sent_biclass':
             self.label_dtype = tf.int32
             self.num_labels = 2
+        elif self.params['obj'] == 'sent_triclass':
+            self.label_dtype = tf.int32
+            self.num_labels = 3
         # if self.params['obj'] == 'sent_reg':
         #     self.label_dtype = tf.float32
         #     # TODO:
-        if self.params['obj'] == 'emo':
+        elif self.params['obj'] == 'emo':
             self.label_dtype = tf.int32
             self.num_labels = 8
-        if self.params['obj'] == 'bc':
+        elif self.params['obj'] == 'bc':
             self.label_dtype = tf.int32
             # TODO: get num labels
 
@@ -106,9 +109,9 @@ class SentibankDataset(Dataset):
 
     def setup_obj(self):
         super(SentibankDataset, self).setup_obj()
-        if self.params['obj'] == 'sent_class':
+        if self.params['obj'] == 'sent_biclass' or self.params['obj'] == 'sent_triclass':
             self.bc2sent = self._get_bc2sent()
-        if self.params['obj'] == 'emo':
+        elif self.params['obj'] == 'emo':
             self.bc2emo = self._get_bc2emo()
 
     ####################################################################################################################
@@ -116,11 +119,20 @@ class SentibankDataset(Dataset):
     ####################################################################################################################
     def _map_label_to_int(self, label):
         """Map emo and bc string labels to int"""
-        if self.params['obj'] == 'sent_class':
+        if self.params['obj'] == 'sent_biclass':
             label = 'neg' if label < 0 else 'pos'
             d = {'neg': 0, 'pos': 1}
             return d[label]
-        if self.params['obj'] == 'emo':
+        elif self.params['obj'] == 'sent_triclass':
+            if label > self.params['sent_neutral_absval']:
+                label = 'pos'
+            elif label < -1 * self.params['sent_neutral_absval']:
+                label = 'neg'
+            else:
+                label = 'neutral'
+            d = {'neg':0, 'neutral':1, 'pos':2}
+            return d[label]
+        elif self.params['obj'] == 'emo':
             d = {'anger': 0, 'anticipation': 1, 'disgust': 2, 'fear': 3,
                  'joy': 4, 'sadness': 5, 'surprise': 6, 'trust': 7}
             return d[label]
@@ -132,7 +144,7 @@ class SentibankDataset(Dataset):
 
         Handful of cases for sent where label doesn't exist. For example, candid_guy
         """
-        if self.params['obj'] == 'sent_class':
+        if self.params['obj'] == 'sent_biclass' or self.params['obj'] == 'sent_triclass':
             if bc in self.bc2sent:
                 return self._map_label_to_int(self.bc2sent[bc])
             else:
@@ -160,18 +172,18 @@ class SentibankDataset(Dataset):
             bc_path = os.path.join(sentibank_img_dir, bc_dir)
             bc_files_list = [os.path.join(bc_path, f) for f in os.listdir(bc_path) if f.endswith('jpg')]
 
+            # Potentially skip this biconcept
             # If objective is predicting bc class, skip biconcept if not enough images
             if self.params['obj'] == 'bc':
                 if len(bc_files_list) < self.params['min_bc_class_size']:
                     continue
-
-            # If objective is predicting sentiment class (pos/neg), skip biconcept if it's neutral-ish
-            if self.params['obj'] == 'sent_class':
+            # Predicting pos/neg or pos/neutral/neg
+            elif self.params['obj'] == 'sent_biclass' or self.params['obj'] == 'sent_triclass':
                 if bc_dir not in self.bc2sent:
                     continue
-                if abs(self.bc2sent[bc_dir]) < self.params['min_sent_absval']:
-                    print bc_dir, self.bc2sent[bc_dir]
-                    continue
+                if self.params['obj'] == 'sent_biclass':   # skip neutral concepts
+                    if abs(self.bc2sent[bc_dir]) < self.params['sent_neutral_absval']:
+                        continue
 
             # Skip this category if label doesn't exist
             label = self._get_label(bc_dir)

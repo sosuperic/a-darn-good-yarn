@@ -8,11 +8,14 @@ img_crop_h: 224
 batch_size: 16
 epochs: 10
 
-min_sent_absval: 0.5
+sent_neutral_absval: 0.5
 min_bc_class_size: -1
 
 basic_cnn:
-    sent_class:
+    sent_biclass:
+        optim: adam
+        lr: 0.01
+    sent_triclass:
         optim: adam
         lr: 0.01
     emo:
@@ -23,7 +26,10 @@ basic_cnn:
         lr: 0.01
 
 vgg:
-    sent_class:
+    sent_biclass:
+        optim: adam
+        lr: 0.01
+    sent_triclass:
         optim: adam
         lr: 0.01
     emo:
@@ -34,7 +40,10 @@ vgg:
         lr: 0.01
 
 vgg_finetune:
-    sent_class:
+    sent_biclass:
+        optim: adam
+        lr: 0.01
+    sent_triclass:
         optim: adam
         lr: 0.01
     emo:

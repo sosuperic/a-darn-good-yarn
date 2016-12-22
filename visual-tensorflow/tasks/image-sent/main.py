@@ -16,6 +16,9 @@ if __name__ == '__main__':
     parser.add_argument('-ds', '--dataset', dest='dataset', default='Sentibank', help='Sentibank,MVSO,you_imemo')
     parser.add_argument('--min_bc_cs', dest='min_bc_class_size', type=int, default=None,
                         help='when obj is bc, only use biconcepts if there is at least min_bc_cs images')
+    parser.add_argument('--sent_neutral_absval', dest='sent_neutral_absval', type=float, default=None,
+                        help='defines ranges [-val,val] for neutral. Images are ignored in this range for sent_biclass,\
+                             while images in this range are used as neutral class for sent_triclass obj')
 
     # Basic params for which job (architecture, classification goal) we're running
     # This corresponds to the training parameters set in config.yaml
@@ -24,7 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('--load_weights', dest='load_weights', action='store_true', default=False,
                         help='load pre-trained vgg weights')
     parser.add_argument('-obj', dest='obj', default='sent',
-                        help='What to predict: sent_class,emo,bc')
+                        help='What to predict: sent_biclass,sent_triclass,emo,bc')
 
     # General training params
     parser.add_argument('-bs', '--batch_size', dest='batch_size', type=int, default=None, help='batch size')
