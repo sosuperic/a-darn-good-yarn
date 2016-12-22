@@ -36,7 +36,8 @@ class BasicVizsentCNN(object):
             self.fc3 = self.fc(self.fc2, 24, '3')               # (B, 24)
             self.fc4 = self.fc(self.fc3, self.output_dim, '4')  # (B, output_dim)
 
-        self.probs = tf.nn.softmax(self.fc4)
+        self.last_fc = self.fc4                                 # for regression
+        self.probs = tf.nn.softmax(self.fc4)                    # for classification
 
     def conv(self, x, kernel_shape, bias_shape, strides):
         weights = tf.get_variable('weights', kernel_shape, initializer=tf.random_normal_initializer())

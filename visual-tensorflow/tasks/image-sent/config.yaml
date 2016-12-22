@@ -12,6 +12,9 @@ sent_neutral_absval: 0.5
 min_bc_class_size: -1
 
 basic_cnn:
+    sent_reg:
+        optim: adam
+        lr: 0.01
     sent_biclass:
         optim: adam
         lr: 0.01
@@ -26,6 +29,9 @@ basic_cnn:
         lr: 0.01
 
 vgg:
+    sent_reg:
+        optim: adam
+        lr: 0.01
     sent_biclass:
         optim: adam
         lr: 0.01
@@ -40,6 +46,9 @@ vgg:
         lr: 0.01
 
 vgg_finetune:
+    sent_reg:
+        optim: adam
+        lr: 0.01
     sent_biclass:
         optim: adam
         lr: 0.01

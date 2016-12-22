@@ -25,7 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--arch', dest='arch', default='basic_cnn',
                         help='what architecture to use: basic_cnn,vgg,vgg_finetune,attention')
     parser.add_argument('-obj', dest='obj', default='sent',
-                        help='What to predict: sent_biclass,sent_triclass,emo,bc')
+                        help='What to predict: sent_reg,sent_biclass,sent_triclass,emo,bc')
 
     # General training params
     parser.add_argument('-bs', '--batch_size', dest='batch_size', type=int, default=None, help='batch size')

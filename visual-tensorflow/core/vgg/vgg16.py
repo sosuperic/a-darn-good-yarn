@@ -264,6 +264,8 @@ class vgg16(object):
             self.fc4l = tf.nn.bias_add(tf.matmul(self.fc3, fc4w), fc4b)
             self.parameters += [fc4w, fc4b]
 
+            # For regression
+            self.last_fc = self.fc4l
 
 
     ###################################################################################################################
