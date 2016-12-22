@@ -39,7 +39,7 @@ class Dataset(object):
             self.output_dim = 8
         elif self.params['obj'] == 'bc':
             self.label_dtype = tf.int32
-            # TODO: get num labels
+            self.output_dim = 1553
 
     ####################################################################################################################
     # Basic getters for public
@@ -113,6 +113,8 @@ class SentibankDataset(Dataset):
             self.bc2sent = self._get_bc2sent()
         elif self.params['obj'] == 'emo':
             self.bc2emo = self._get_bc2emo()
+        elif self.params['obj'] == 'bc':
+            self.bc2idx = self._get_bc2idx()
 
     ####################################################################################################################
     # Getting labels
@@ -136,7 +138,9 @@ class SentibankDataset(Dataset):
             d = {'anger': 0, 'anticipation': 1, 'disgust': 2, 'fear': 3,
                  'joy': 4, 'sadness': 5, 'surprise': 6, 'trust': 7}
             return d[label]
-        # TODO: bc
+        elif self.params['obj'] == 'bc':
+            return self.bc2idx[label]
+
 
     def _get_label(self, bc):
         """
@@ -161,8 +165,7 @@ class SentibankDataset(Dataset):
             else:       # no emotions for biconcept
                 return None
         elif self.params['obj'] == 'bc':
-            # TODO: one hot encode? Will have to know total number of classes tho (some bc's may be skipped)
-            return bc
+            return self._map_label_to_int(bc)
 
     ####################################################################################################################
     # Overriding / adding to parent methods
@@ -278,6 +281,13 @@ class SentibankDataset(Dataset):
             bc2img_fps[bc] = img_fps
 
         return bc2img_fps
+
+    def _get_bc2idx(self):
+        """Return dictionary mapping biconcept to idx"""
+        bc2idx = {}
+        for i, bc in enumerate([d for d in os.listdir(BC_PATH) if not d.startswith('.')]):
+            bc2idx[bc] = i
+        return bc2idx
 
 
 def get_dataset(params):
