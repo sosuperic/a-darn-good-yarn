@@ -9,3 +9,6 @@ vizsent/soumith/models
 *.npz
 *idea/
 *.ipynb_checkpoints
+
+*logs/
+*checkpoints/

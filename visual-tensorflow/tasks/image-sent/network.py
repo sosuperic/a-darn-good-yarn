@@ -1,11 +1,12 @@
 # Network class called by main, with train, test functions
 
+import os
 import tensorflow as tf
 
 from datasets import get_dataset
 from core.basic_cnn import BasicVizsentCNN
 from core.vgg.vgg16 import vgg16
-from core.utils.utils import get_optimizer
+from core.utils.utils import get_optimizer, load_model, save_model
 
 class Network(object):
     def __init__(self, params):
@@ -53,6 +54,7 @@ class Network(object):
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
             # Training
+            saver = tf.train.Saver(max_to_keep=None)
             for i in range(self.params['epochs']):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_batches = self.dataset.get_num_batches()
@@ -60,7 +62,20 @@ class Network(object):
                     # print sess.run(basic_cnn.fc4, feed_dict={'img_batch:0': img_batch.eval()}).shape
                     _, loss_val = sess.run([train_step, loss], feed_dict={'img_batch:0': img_batch.eval()})
                     print loss_val
+                    # break
+
+                # Save model at end of epoch (potentially)
+                save_model(sess, saver, self.params, i)
 
             coord.request_stop()
             coord.join(threads)
 
+
+    def test(self):
+        """Test"""
+        with tf.Session() as sess:
+            print 'Load model'
+
+            saver = load_model(sess, self.params)
+
+            # print sess.run(tf.trainable_variables()[0])

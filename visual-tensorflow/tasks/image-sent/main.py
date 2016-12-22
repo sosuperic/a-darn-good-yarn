@@ -24,7 +24,7 @@ if __name__ == '__main__':
     # This corresponds to the training parameters set in config.yaml
     parser.add_argument('-a', '--arch', dest='arch', default='basic_cnn',
                         help='what architecture to use: basic_cnn,vgg,vgg_finetune,attention')
-    parser.add_argument('-obj', dest='obj', default='sent',
+    parser.add_argument('-obj', dest='obj', default='sent_biclass',
                         help='What to predict: sent_reg,sent_biclass,sent_triclass,emo,bc')
 
     # General training params
@@ -44,11 +44,13 @@ if __name__ == '__main__':
                         help='produce output imgs? of where attention is focused')
     parser.add_argument('-dd', dest='deepdream', action='store_true', default=False,
                         help='produce deep dream hallucinations of filters')
+    parser.add_argument('--ckpt_dir', dest='ckpt_dir', default=None, help='directory to load checkpointed model')
+    parser.add_argument('--load_epoch', dest='load_epoch', default=None, help='checkpoint epoch to load')
 
     # Bookkeeping, checkpointing, etc.
-    parser.add_argument('--save_every_epoch', dest='save_every_epoch', type=int, default=5,
-                        help='save model every epoch')
-    parser.add_argument('--val_every_epoch', dest='val_every_epoch', type=int, default=1,
+    parser.add_argument('--save_every_epoch', dest='save_every_epoch', type=int, default=None,
+                        help='save model every _ epochs')
+    parser.add_argument('--val_every_epoch', dest='val_every_epoch', type=int, default=None,
                         help='evaluate on validation set every _ epochs')
     parser.add_argument('--gpus', dest='gpus', default=None, help='gpu_ids to use')
 
@@ -67,14 +69,19 @@ if __name__ == '__main__':
     # Set up GPUs
     setup_gpus(params['gpus'])
 
-    # Make checkpoint directory
-    checkpoints_dir = os.path.join(__location__, 'checkpoints')
-    make_checkpoint_dir(checkpoints_dir, params)
-
-
-    # Get network and train/test
-    network = Network(params)
+    # Train / test
     if params['mode'] == 'train':
+        # Make checkpoint directory
+        checkpoints_dir = os.path.join(__location__, 'checkpoints')
+        save_dir = make_checkpoint_dir(checkpoints_dir, params)
+        params['save_dir'] = save_dir
+
+        network = Network(params)
         network.train()
+
+    elif params['mode'] == 'test':
+        params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
+        network = Network(params)
+        network.test()
 
 

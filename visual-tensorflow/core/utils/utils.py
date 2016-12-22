@@ -88,6 +88,8 @@ def make_checkpoint_dir(checkpoints_dir, params):
     with open(os.path.join(save_dir, 'params.json'), 'w') as f:
         json.dump(params, f)
 
+    return save_dir
+
 ########################################################################################################################
 # Neural networks
 ########################################################################################################################
@@ -108,3 +110,35 @@ def get_optimizer(optim_str, lr):
         optim = tf.train.RMSPropOptimizer(lr)
 
     return optim
+
+def save_model(sess, saver, params, i):
+    """Save model potentially"""
+    if (i+1) % params['save_every_epoch'] == 0:
+        out_file = saver.save(sess,
+                              os.path.join(params['save_dir'], _get_ckpt_basename(params)),
+                              global_step=i)
+        print 'Model saved in file: {}'.format(out_file)
+
+def load_model(sess, params):
+    """Load model from checkpoint"""
+    # First load graph
+    # .meta file defines graph - they should all be the same? So just take any one
+    meta_file = [f for f in os.listdir(params['ckpt_dirpath']) if f.endswith('meta')][0]
+    meta_filepath = os.path.join(params['ckpt_dirpath'], meta_file)
+    saver = tf.train.import_meta_graph(meta_filepath)
+
+    # Load weights
+    if params['load_epoch'] is not None:        # load the checkpoint for the given epoch
+        fn = _get_ckpt_basename(params) + '-' + params['load_epoch']
+        saver.restore(sess, os.path.join(params['ckpt_dirpath'], fn))
+    else:       # 'checkpoint' binary file keeps track of latest checkpoints. Use it to to get most recent
+        ckpt = tf.train.get_checkpoint_state(params['ckpt_dirpath'])
+        ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+        ckpt_path = os.path.join(params['ckpt_dirpath'], ckpt_name)
+        saver.restore(sess, ckpt_path)
+
+    return saver
+
+def _get_ckpt_basename(params):
+    """Use to save and load"""
+    return params['arch'] + '-' + params['obj']
