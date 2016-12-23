@@ -21,14 +21,14 @@ class Network(object):
         self.logger = self._get_logger()
         self.output_dim = self.dataset.get_output_dim()
         with tf.Session() as sess:
-            # Get model
-            model = self._get_model(sess)
-
             # Get data
             self.logger.info('Retrieving training data and setting up graph')
             splits = self.dataset.setup_graph()
-            tr_img_batch, tr_label_batch = splits['train']['img_batch'], splits['train']['label_batch']
+            tr_img_batch, self.tr_label_batch = splits['train']['img_batch'], splits['train']['label_batch']
             va_img_batch, va_label_batch = splits['valid']['img_batch'], splits['valid']['label_batch']
+
+            # Get model
+            model = self._get_model(sess, tr_img_batch)
 
             # Loss
             self._get_loss(model)
@@ -54,10 +54,7 @@ class Network(object):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_tr_batches = self.dataset.get_num_batches('train')
                 for j in range(num_tr_batches):
-                    img_batch, label_batch = sess.run([tr_img_batch, tr_label_batch])
-                    _, loss_val, acc_val, summary = sess.run([train_step, self.loss, self.acc, summary_op],
-                                                             feed_dict={'img_batch:0': img_batch,
-                                                                        'label_batch:0': label_batch})
+                    _, loss_val, acc_val, summary = sess.run([train_step, self.loss, self.acc, summary_op])
 
                     self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
                     self.logger.info('................... -- Acc: {}'.format(acc_val))
@@ -66,7 +63,7 @@ class Network(object):
                     if j % 10 == 0:
                         tr_summary_writer.add_summary(summary, i * num_tr_batches + j)
 
-                    # if j == 5:
+                    # if j == 10:
                     #     break
 
                 # Evaluate on validation set (potentially)
@@ -153,7 +150,7 @@ class Network(object):
         # _, self.logger = setup_logging(save_path=logs_path)
         return logger
 
-    def _get_model(self, sess=None):
+    def _get_model(self, sess, img_batch):
         """Return model (sess is required to load weights for vgg)"""
         # Get model
         model = None
@@ -162,7 +159,8 @@ class Network(object):
             model = BasicVizsentCNN(batch_size=self.params['batch_size'],
                                     img_w=self.params['img_crop_w'],
                                     img_h=self.params['img_crop_h'],
-                                    output_dim=self.output_dim)
+                                    output_dim=self.output_dim,
+                                    imgs=img_batch)
         elif 'vgg' in self.params['arch']:
             load_weights = True if self.params['arch'] == 'vgg_finetune' else False
             model = vgg16(batch_size=self.params['batch_size'],
@@ -170,17 +168,16 @@ class Network(object):
                           h=self.params['img_crop_h'],
                           sess=sess,
                           load_weights=load_weights,
-                          output_dim=self.output_dim)
+                          output_dim=self.output_dim,
+                          img_batch=img_batch)
         return model
 
     def _get_loss(self, model):
+        label_batch_op = tf.placeholder_with_default(self.tr_label_batch,
+            shape=[self.params['batch_size']], name='label_batch')
         if self.params['obj'] == 'sent_reg':
-            label_batch_op = tf.placeholder(tf.float32, shape=[self.params['batch_size']],
-                                            name='label_batch')
             self.loss = tf.sqrt(tf.reduce_mean(tf.square(tf.sub(model.last_fc, label_batch_op))))
         else:
-            label_batch_op = tf.placeholder(tf.int32, shape=[self.params['batch_size']],
-                                            name='label_batch')
             labels_onehot = tf.one_hot(label_batch_op, self.output_dim)     # (batch_size, num_classes)
             self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(model.probs, labels_onehot))
 

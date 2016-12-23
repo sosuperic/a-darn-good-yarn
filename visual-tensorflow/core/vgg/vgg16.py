@@ -14,9 +14,11 @@ from imagenet_classes import class_names
 __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 class vgg16(object):
-    def __init__(self, batch_size=None, w=None, h=None, sess=None, load_weights=True, output_dim=None):
-        self.imgs = tf.placeholder(tf.float32, shape=[batch_size, h, w, 3], name='img_batch')
+    def __init__(self, batch_size=None, w=None, h=None, sess=None, load_weights=True, output_dim=None,
+                 img_batch=None):
+        self.imgs = tf.placeholder_with_default(img_batch, shape=[batch_size, h, w, 3], name='img_batch')
         self.output_dim = output_dim
+
         self.parameters = []
         self.convlayers()
         self.fc_layers()

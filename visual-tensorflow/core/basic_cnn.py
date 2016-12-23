@@ -6,15 +6,17 @@ import tensorflow as tf
 
 class BasicVizsentCNN(object):
     # Following architecture of https://arxiv.org/pdf/1509.06041v1.pdf
-    def __init__(self, batch_size=None, img_w=None, img_h=None, output_dim=None):
+    def __init__(self, batch_size=None, img_w=None, img_h=None, output_dim=None, imgs=None):
         self.batch_size = batch_size
         self.img_w = img_w
         self.img_h = img_h
         self.output_dim = output_dim
+        self.imgs = imgs
 
         # Create graph
         # Input
-        self.img_batch = tf.placeholder(tf.float32, shape=[self.batch_size, self.img_h, self.img_w, 3], name='img_batch')
+        self.img_batch = tf.placeholder_with_default(self.imgs,
+            shape=[self.batch_size, self.img_h, self.img_w, 3], name='img_batch')
 
         # Rest of graph
         with tf.variable_scope('convpool1'):
