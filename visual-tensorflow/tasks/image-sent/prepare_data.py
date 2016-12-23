@@ -137,6 +137,7 @@ def get_MVSO_bc2emotion2value():
 
 def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256, target_h=256):
     """Download, resize, and center crop images"""
+    import time
     mr = MovieReader()          # used to resize and center crop
     with open(os.path.join(MVSO_PATH, 'image_url_mappings', 'english.csv'), 'r') as f:
         i = 0
@@ -145,11 +146,16 @@ def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256,
                 i += 1
                 continue
             else:
+                if i < 1785550:
+                    i += 1
+                    continue
                 bc, url = line.strip().split(',')
                 bc_dir = os.path.join(output_dir, bc)
 
                 if i % 50 == 0:
+                    time.sleep(0.1)
                     print 'bi_concept: {}; num_imgs: {}'.format(bc, i)
+                i += 1
 
                 # Make bi_concept directory if it doesn't exist
                 if not os.path.exists(bc_dir):
@@ -158,18 +164,25 @@ def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256,
                 # Retrive image and save
                 fn = os.path.basename(url)
                 fp = os.path.join(bc_dir, fn)
+
+                # Skip if file exists
+                if os.path.exists(fp):
+                    continue
+
                 urllib.urlretrieve(url, fp)
 
                 # Reopen image to resize and central crop
-                im = Image.open(fp)
-                if im.mode != 'RGB':      # type L, P, etc. shows some type of Flickr unavailable photo img
-                    os.remove(fp)
-                    continue
-                im = np.array(im)
-                im =  mr.resize_and_center_crop(im, target_w, target_h)
-                Image.fromarray(im).save(fp)
-
-                i += 1
+                try:
+                    im = Image.open(fp)
+                    if im.mode != 'RGB':      # type L, P, etc. shows some type of Flickr unavailable photo img
+                        os.remove(fp)
+                        continue
+                    im = np.array(im)
+                    im =  mr.resize_and_center_crop(im, target_w, target_h)
+                    Image.fromarray(im).save(fp)
+                except Exception as e:
+                    print e
+#                i += 1
 
 ### BC
 # get_all_bc_img_fps()
@@ -183,10 +196,9 @@ def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256,
 
 ### MVSO
 import pprint
-bc2sentiment = get_MVSO_bc2sentiment()
-pprint.pprint(bc2sentiment)
-print len([bc for bc, s in bc2sentiment.items() if abs(s) > 0.6])
+# bc2sentiment = get_MVSO_bc2sentiment()
+# pprint.pprint(bc2sentiment)
 # print len(bc2sentiment.keys())
 # bc2emo2val = get_MVSO_bc2emotion2value()
 # pprint.pprint(bc2emo2val)
-# download_MVSO_imgs()
+download_MVSO_imgs()
