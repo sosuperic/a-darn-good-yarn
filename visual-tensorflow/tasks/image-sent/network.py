@@ -54,9 +54,10 @@ class Network(object):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_tr_batches = self.dataset.get_num_batches('train')
                 for j in range(num_tr_batches):
+                    img_batch, label_batch = sess.run([tr_img_batch, tr_label_batch])
                     _, loss_val, acc_val, summary = sess.run([train_step, self.loss, self.acc, summary_op],
-                                                             feed_dict={'img_batch:0': tr_img_batch.eval(),
-                                                                        'label_batch:0': tr_label_batch.eval()})
+                                                             feed_dict={'img_batch:0': img_batch,
+                                                                        'label_batch:0': label_batch})
 
                     self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
                     self.logger.info('................... -- Acc: {}'.format(acc_val))
@@ -72,10 +73,11 @@ class Network(object):
                 if (i+1) % self.params['val_every_epoch'] == 0:
                     num_va_batches = self.dataset.get_num_batches('valid')
                     for j in range(num_va_batches):
+                        img_batch, label_batch = sess.run([va_img_batch, va_label_batch])
                         loss_val, acc_val, loss_summary, acc_summary = sess.run([self.loss, self.acc,
                                                                     self.loss_summary, self.acc_summary],
-                                                              feed_dict={'img_batch:0': va_img_batch.eval(),
-                                                                        'label_batch:0': va_label_batch.eval()})
+                                                              feed_dict={'img_batch:0': img_batch,
+                                                                        'label_batch:0': label_batch})
 
                         self.logger.info('Valid minibatch {} / {} -- Loss: {}'.format(j, num_va_batches, loss_val))
                         self.logger.info('................... -- Acc: {}'.format(acc_val))

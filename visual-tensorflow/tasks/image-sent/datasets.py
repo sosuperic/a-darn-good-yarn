@@ -79,8 +79,9 @@ class Dataset(object):
 
     def _input_pipeline(self, files_tensor, labels_tensor):
         input_queue = tf.train.slice_input_producer([files_tensor, labels_tensor],
-                                                    shuffle=False,
-                                                    capacity=32
+                                                    shuffle=True,
+                                                    seed=123,
+                                                    capacity=1000
                                                     )
         img, label = self._read_images_from_disk(input_queue)
         return img, label
