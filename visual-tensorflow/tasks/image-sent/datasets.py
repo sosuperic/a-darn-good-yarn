@@ -167,7 +167,7 @@ class SentibankDataset(Dataset):
         # Iterate through directory, extract labels from biconcept
         tfrecords_dir = os.path.join(self.__cwd__, TFRECORDS_PATH)
         for split in [d for d in os.listdir(tfrecords_dir)]:
-            # split = 'valid'
+            split = 'valid'
             split_dir = os.path.join(tfrecords_dir, split)
             for f in [f for f in os.listdir(split_dir) if not f.startswith('.')]:
                 bc = os.path.basename(f).split('.')[0]
@@ -203,12 +203,12 @@ class SentibankDataset(Dataset):
                     c += 1
                 self.num_pts[split] += c
                 label2count[label] += c
-            # break
+            break
 
-        # self.num_pts['train'] = self.num_pts['valid']
-        # self.num_pts['test'] = self.num_pts['valid']
-        # files_list['train'] = files_list['valid']
-        # files_list['test'] = files_list['valid']
+        self.num_pts['train'] = self.num_pts['valid']
+        self.num_pts['test'] = self.num_pts['valid']
+        files_list['train'] = files_list['valid']
+        files_list['test'] = files_list['valid']
 
         # Save label2count so we can pass it using feed_dict for loss
         with open(os.path.join(self.params['save_dir'], 'label2count.json'), 'w') as f:

@@ -197,6 +197,7 @@ class Network(object):
                                                      name='label_batch')
 
         if self.params['obj'] == 'sent_reg':
+            # TODO: add weights for regression as well
             self.loss = tf.sqrt(tf.reduce_mean(tf.square(tf.sub(model.last_fc, label_batch_op))))
         else:
             labels_onehot = tf.one_hot(label_batch_op, self.output_dim)     # (batch_size, num_classes)
