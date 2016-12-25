@@ -6,6 +6,7 @@ import os
 import tensorflow as tf
 
 from datasets import get_dataset
+from prepare_data import SENT_BICLASS_LABEL2INT, SENT_TRICLASS_LABEL2INT, EMO_LABEL2INT, get_bc2idx
 from core.basic_cnn import BasicVizsentCNN
 from core.vgg.vgg16 import vgg16
 from core.utils.utils import get_optimizer, load_model, save_model, setup_logging
@@ -130,7 +131,7 @@ class Network(object):
             self.logger.info('Restoring checkpoint')
             saver = load_model(sess, self.params)
 
-            print sess.run(tf.trainable_variables()[0])
+            # print sess.run(tf.trainable_variables()[0])
 
             # Test
             num_batches = self.dataset.get_num_batches('test')
@@ -143,6 +144,49 @@ class Network(object):
                 # # Write summary
                 if j % 10 == 0:
                     summary_writer.add_summary(summary, j)
+
+            coord.request_stop()
+            coord.join(threads)
+
+    ####################################################################################################################
+    # Predict
+    ####################################################################################################################
+    def predict(self):
+        """Test"""
+        self.logger = self._get_logger()
+        self.output_dim = self.dataset.get_output_dim()
+        with tf.Session() as sess:
+            # Get data
+            self.logger.info('Getting images to predict')
+            img_batch = self.dataset.setup_graph()
+
+            # Get model
+            self.logger.info('Building graph')
+            model = self._get_model(sess, img_batch)
+
+            # Initialize
+            coord, threads = self._initialize(sess)
+
+            # Restore model now that graph is complete -- loads weights to variables in existing graph
+            self.logger.info('Restoring checkpoint')
+            saver = load_model(sess, self.params)
+
+            # Make directory to store predictions
+            preds_dir = os.path.join(self.params['video_dir'], 'preds')
+            if not os.path.exists(preds_dir):
+                os.mkdir(preds_dir)
+
+            # Predict
+            idx2label = self.get_idx2label()
+            num_batches = self.dataset.get_num_batches('predict')
+            with open(os.path.join(preds_dir, '{}.csv'.format(self.params['obj'])), 'w') as f:
+                labels = [idx2label[i] for i in range(self.output_dim)]
+                f.write('{}\n'.format(','.join(labels)))
+                for j in range(num_batches):
+                    probs = sess.run(model.probs)
+                    for frame_prob in probs:
+                        frame_prob = ','.join([str(v) for v in frame_prob])
+                        f.write('{}\n'.format(frame_prob))
 
             coord.request_stop()
             coord.join(threads)
@@ -238,3 +282,19 @@ class Network(object):
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         return coord, threads
+
+    # For prediction
+    def get_idx2label(self):
+        """Used to turn indices into human readable labels"""
+        label2idx = None
+        if self.params['obj'] == 'sent_biclass':
+            label2idx = SENT_BICLASS_LABEL2INT
+        elif self.params['obj'] == 'sent_triclass':
+            label2idx = SENT_TRICLASS_LABEL2INT
+        elif self.params['obj'] == 'emo':
+            label2idx = EMO_LABEL2INT
+        elif self.params['obj'] == 'bc':
+            label2idx = get_bc2idx()
+
+        idx2label = {v:k for k,v in label2idx.items()}
+        return idx2label

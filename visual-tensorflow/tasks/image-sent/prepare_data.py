@@ -21,6 +21,14 @@ BC_PATH = 'data/Sentibank/Flickr/bi_concepts1553'
 BC_TRAINTEST_PATH = 'data/Sentibank/Flickr/trainingAndTestingPartition'
 EMOLEX_PATH = 'data/emolex/NRC-emotion-lexicon-wordlevel-alphabetized-v0.92.txt'
 
+# Labels
+SENT_BICLASS_LABEL2INT = {'neg': 0, 'pos': 1}
+SENT_TRICLASS_LABEL2INT = {'neg':0, 'neutral':1, 'pos':2}
+EMO_LABEL2INT = {'anger': 0, 'anticipation': 1, 'disgust': 2, 'fear': 3,
+             'joy': 4, 'sadness': 5, 'surprise': 6, 'trust': 7}
+# BC_LABEL2INT = get_bc2idx()
+# TODO: should clean up how to use BC_LABEL2INT
+
 # You dataset - 20k images with emotions
 YOU_IMEMO_PATH = 'data/you_imemo/agg'
 
@@ -267,13 +275,13 @@ def write_sentibank_to_tfrecords(split=[0.8, 0.1, 0.1]):
     va_writer.close()
     te_writer.close()
 
-# Get labels
+
 def map_label_to_int(label, obj, sent_neutral_absval=None, bc2idx=None):
     """Map emo and bc string labels to int for classification tasks"""
     if obj == 'sent_biclass':
         label = 'neg' if label < 0 else 'pos'
         d = {'neg': 0, 'pos': 1}
-        return d[label]
+        return SENT_BICLASS_LABEL2INT[label]
     elif obj == 'sent_triclass':
         if label > sent_neutral_absval:
             label = 'pos'
@@ -282,11 +290,11 @@ def map_label_to_int(label, obj, sent_neutral_absval=None, bc2idx=None):
         else:
             label = 'neutral'
         d = {'neg':0, 'neutral':1, 'pos':2}
-        return d[label]
+        return SENT_TRICLASS_LABEL2INT[label]
     elif obj == 'emo':
         d = {'anger': 0, 'anticipation': 1, 'disgust': 2, 'fear': 3,
              'joy': 4, 'sadness': 5, 'surprise': 6, 'trust': 7}
-        return d[label]
+        return EMO_LABEL2INT[label]
     elif obj == 'bc':
         return bc2idx[label]
 

@@ -45,12 +45,13 @@ def combine_cmdline_and_yaml(cmdline, yaml):
     #         cmdline_dict[param] = yaml[param]
 
     # Job-specific, i.e. params for the given architecture + objective, etc.
-    possible_job_overwrites = ['lr', 'optim']
+    possible_job_overwrites = ['lr', 'optim', 'ckpt_dir']
     arch = cmdline_dict['arch']
     obj = cmdline_dict['obj']
     for param in possible_job_overwrites:
         if cmdline_dict[param] is None:
-            cmdline_dict[param] = yaml[arch][obj][param]
+            if param in yaml[arch][obj]:
+                cmdline_dict[param] = yaml[arch][obj][param]
 
     # Add all key-values that aren't in cmdline_dict (or are None)
     def add_remaining_kvs(yaml):
@@ -174,7 +175,7 @@ def load_model(sess, params):
     # saver = tf.train.import_meta_graph(meta_filepath)
 
     # Load weights
-    saver = tf.train.Saver(tf.all_variables())
+    saver = tf.train.Saver(tf.global_variables())
     if params['load_epoch'] is not None:        # load the checkpoint for the given epoch
         fn = _get_ckpt_basename(params) + '-' + params['load_epoch']
         saver.restore(sess, os.path.join(params['ckpt_dirpath'], fn))

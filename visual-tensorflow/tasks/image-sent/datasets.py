@@ -2,6 +2,7 @@
 
 from collections import defaultdict, Counter
 import json
+from natsort import natsorted
 import os
 import tensorflow as tf
 
@@ -62,12 +63,16 @@ class Dataset(object):
     ####################################################################################################################
     # Methods implemented / added to by specific datasets
     ####################################################################################################################
-    # def get_files_labels_list(self):
-    #     """Returns list of files and list of labels for use by tf input queue"""
-    #     pass
+    def get_files_list(self):
+        """Returns list of files to predict on for use by tf input queue"""
+        pass
 
     def get_tfrecords_files_list(self):
         """Returns list of files and list of labels for use by tf input queue"""
+        pass
+
+    # Create pipeline, graph, train/valid/test splits for use by network
+    def read_and_decode(self, input_queue):
         pass
 
     def preprocess_img(self, img):
@@ -77,71 +82,11 @@ class Dataset(object):
         img = tf.cast(img, tf.float32)
         return img
 
-    ####################################################################################################################
-    # Create pipeline, graph, train/valid/test splits for use by network
-    ####################################################################################################################
-    def read_and_decode(self, input_queue):
-        """Read tfrecord and decode into tensors"""
-        reader = tf.TFRecordReader()
-        _, serialized_example = reader.read(input_queue)
-        features = tf.parse_single_example(
-            serialized_example,
-            features={
-                'h': tf.FixedLenFeature([], tf.int64),
-                'w': tf.FixedLenFeature([], tf.int64),
-                'img': tf.FixedLenFeature([], tf.string),
-                'sent_reg': tf.FixedLenFeature([], tf.float32),
-                'sent_biclass': tf.FixedLenFeature([], tf.int64),
-                'sent_triclass': tf.FixedLenFeature([], tf.int64),
-                'emo': tf.FixedLenFeature([], tf.int64),
-                'bc': tf.FixedLenFeature([], tf.int64)
-            })
-
-        h = tf.cast(features['h'], tf.int32)
-        w = tf.cast(features['w'], tf.int32)
-        img = tf.decode_raw(features['img'], tf.uint8)
-        # img = tf.image.decode_jpeg(features['img'], channels=3)
-        img = tf.reshape(img, [h, w, 3])
-        img.set_shape([self.params['img_h'], self.params['img_w'], 3])
-
-        label = tf.cast(features[self.params['obj']], tf.int32)
-
-        img = self.preprocess_img(img)
-
-        return img, label
-
     def input_pipeline(self, files_list, num_read_threads=5):
-        """Create img and label tensors from string input producer queue"""
-        input_queue = tf.train.string_input_producer(files_list, shuffle=True)
-
-        # TODO: where do I get num_read_threads
-        with tf.device('/cpu:0'):       # save gpu for matrix ops
-            img_label_list = [self.read_and_decode(input_queue) for _ in range(num_read_threads)]
-        min_after_dequeue = 10000
-        capacity = min_after_dequeue + 3 * self.params['batch_size']
-        img_batch, label_batch = tf.train.shuffle_batch_join(
-            img_label_list, batch_size=self.params['batch_size'], capacity=capacity,
-            min_after_dequeue=min_after_dequeue)
-
-        return img_batch, label_batch
+        pass
 
     def setup_graph(self):
-        """Get lists of data, convert to tensors, set up pipeline"""
-        if self.params['mode'] == 'train':
-            self.splits = defaultdict(dict)
-            self.files_list = self.get_tfrecords_files_list()
-            split_names = {0: 'train', 1: 'valid', 2: 'test'}
-            for i in range(3):
-                name = split_names[i]
-                img_batch, label_batch = self.input_pipeline(self.files_list[name])
-                self.splits[name]['img_batch'] = img_batch
-                self.splits[name]['label_batch'] = label_batch
-            return self.splits
-
-        elif self.params['mode'] == 'test':
-            self.files_list = self.get_tfrecords_files_list()
-            img_batch, label_batch = self.input_pipeline(self.files_list)
-            return img_batch, label_batch
+        pass
 
 ########################################################################################################################
 ###
@@ -162,7 +107,7 @@ class SentibankDataset(Dataset):
             self.bc_lookup = get_bc2idx()
 
     ####################################################################################################################
-    # Overriding / adding to parent methods
+    # Getting tfrecords list
     ####################################################################################################################
     def get_tfrecords_files_list(self):
         """Return list of tfrecord files"""
@@ -239,11 +184,125 @@ class SentibankDataset(Dataset):
 
         return files_list
 
+    ####################################################################################################################
+    # Setting up pipeline
+    ####################################################################################################################
+    def read_and_decode(self, input_queue):
+        """Read tfrecord and decode into tensors"""
+        reader = tf.TFRecordReader()
+        _, serialized_example = reader.read(input_queue)
+        features = tf.parse_single_example(
+            serialized_example,
+            features={
+                'h': tf.FixedLenFeature([], tf.int64),
+                'w': tf.FixedLenFeature([], tf.int64),
+                'img': tf.FixedLenFeature([], tf.string),
+                'sent_reg': tf.FixedLenFeature([], tf.float32),
+                'sent_biclass': tf.FixedLenFeature([], tf.int64),
+                'sent_triclass': tf.FixedLenFeature([], tf.int64),
+                'emo': tf.FixedLenFeature([], tf.int64),
+                'bc': tf.FixedLenFeature([], tf.int64)
+            })
+
+        h = tf.cast(features['h'], tf.int32)
+        w = tf.cast(features['w'], tf.int32)
+        img = tf.decode_raw(features['img'], tf.uint8)
+        # img = tf.image.decode_jpeg(features['img'], channels=3)
+        img = tf.reshape(img, [h, w, 3])
+        img.set_shape([self.params['img_h'], self.params['img_w'], 3])
+
+        label = tf.cast(features[self.params['obj']], tf.int32)
+
+        img = self.preprocess_img(img)
+
+        return img, label
+
+    def input_pipeline(self, files_list, num_read_threads=5):
+        """Create img and label tensors from string input producer queue"""
+        input_queue = tf.train.string_input_producer(files_list, shuffle=True)
+
+        # TODO: where do I get num_read_threads
+        with tf.device('/cpu:0'):       # save gpu for matrix ops
+            img_label_list = [self.read_and_decode(input_queue) for _ in range(num_read_threads)]
+        min_after_dequeue = 10000
+        capacity = min_after_dequeue + 3 * self.params['batch_size']
+        img_batch, label_batch = tf.train.shuffle_batch_join(
+            img_label_list, batch_size=self.params['batch_size'], capacity=capacity,
+            min_after_dequeue=min_after_dequeue)
+
+        return img_batch, label_batch
+
+    def setup_graph(self):
+        """Get lists of data, convert to tensors, set up pipeline"""
+        if self.params['mode'] == 'train':
+            self.splits = defaultdict(dict)
+            self.files_list = self.get_tfrecords_files_list()
+            split_names = {0: 'train', 1: 'valid', 2: 'test'}
+            for i in range(3):
+                name = split_names[i]
+                img_batch, label_batch = self.input_pipeline(self.files_list[name])
+                self.splits[name]['img_batch'] = img_batch
+                self.splits[name]['label_batch'] = label_batch
+            return self.splits
+
+        elif self.params['mode'] == 'test':
+            self.files_list = self.get_tfrecords_files_list()
+            img_batch, label_batch = self.input_pipeline(self.files_list)
+            return img_batch, label_batch
+
     def preprocess_img(self, img):
         img = super(SentibankDataset, self).preprocess_img(img)
         # Do more things to img
         return img
 
+########################################################################################################################
+###
+### PREDICTION DATASET (predicting values on unseen images, i.e. movie frames)
+###
+########################################################################################################################
+class PredictionDataset(Dataset):
+
+    # Create pipeline, graph, train/valid/test splits for use by network
+    def read_and_decode(self, input_queue):
+        """Decode one image"""
+        file_contents = tf.read_file(input_queue[0])
+
+        # img = tf.decode_raw(file_contents, tf.uint8)
+        # img = tf.reshape(img, [self.params['img_h'], self.params['img_w'], 3])
+        # img.set_shape([self.params['img_h'], self.params['img_w'], 3])
+
+        img = tf.image.decode_jpeg(file_contents, channels=3)
+        img.set_shape([self.params['img_h'], self.params['img_w'], 3])
+        return img
+
+    def input_pipeline(self, files_tensor, num_read_threads=5):
+        """Create queue"""
+        input_queue = tf.train.slice_input_producer([files_tensor], shuffle=False) # capacity=1000
+        img = self.read_and_decode(input_queue)
+        return img
+
+    def setup_graph(self):
+        """Get lists of data, convert to tensors, set up pipeline"""
+        self.files_list = self.get_files_list()
+        self.files_tensor = tf.convert_to_tensor(self.files_list, dtype=tf.string)
+
+        img = self.input_pipeline(self.files_list)
+        img = self.preprocess_img(img)
+        img_batch = tf.train.batch([img], batch_size=self.params['batch_size'])
+        return img_batch
+
+    # Get files
+    def get_files_list(self):
+        """Return list of images to predict"""
+        files_list = natsorted([f for f in os.listdir(os.path.join(self.params['video_dir'], 'frames')) if f.endswith('jpg')])
+        files_list = [os.path.join(self.params['video_dir'], 'frames', f) for f in files_list]
+        self.num_pts = {'predict': len(files_list)}
+        self.num_batches = {'predict': int(len(files_list) / self.params['batch_size'])}
+
+        return files_list
+
 def get_dataset(params):
-    if params['dataset'] == 'Sentibank':
+    if params['mode'] == 'predict':
+        return PredictionDataset(params)
+    elif params['dataset'] == 'Sentibank':
         return SentibankDataset(params)

@@ -2,17 +2,16 @@
 
 import argparse
 import os
+import pprint
 
 from core.utils.utils import combine_cmdline_and_yaml, make_checkpoint_dir, read_yaml, setup_gpus
-
 from network import Network
-# Load and parse config
 
 if __name__ == '__main__':
     # Set up commmand line arguments
     parser = argparse.ArgumentParser(description='main function to train and test image-sent models')
 
-    parser.add_argument('-m', '--mode', dest='mode', default='train', help='train,test')
+    parser.add_argument('-m', '--mode', dest='mode', default='train', help='train,test,predict')
     parser.add_argument('-ds', '--dataset', dest='dataset', default='Sentibank', help='Sentibank,MVSO,you_imemo')
     parser.add_argument('--min_bc_cs', dest='min_bc_class_size', type=int, default=None,
                         help='when obj is bc, only use biconcepts if there is at least min_bc_cs images')
@@ -36,8 +35,7 @@ if __name__ == '__main__':
     parser.add_argument('-optim', dest='optim', default=None, help='optimziation method')
 
     # Testing options - not found in yaml
-    parser.add_argument('-vd', dest='video_dir', help='directory that contains video')
-    parser.add_argument('-p', dest='pred', action='store_true', default=True, help='produce predictions per frame')
+    parser.add_argument('-vd', '--video_dir', dest='video_dir', help='directory that contains video and frames/ folder')
     parser.add_argument('-cb', dest='color_blocks', action='store_true', default=False,
                         help='predict on solid color blocks')
     parser.add_argument('-att', dest='attention', action='store_true', default=False,
@@ -56,6 +54,8 @@ if __name__ == '__main__':
 
     cmdline = parser.parse_args()
 
+    ####################################################################################################################
+
     # Read config from yaml
     __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
     config = read_yaml(os.path.join(__location__, 'config.yaml'))
@@ -67,7 +67,6 @@ if __name__ == '__main__':
     setup_gpus(params['gpus'])
 
     # Print params
-    import pprint
     pprint.pprint(params)
 
     # Train / test
@@ -85,5 +84,10 @@ if __name__ == '__main__':
         params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
         network = Network(params)
         network.test()
+
+    elif params['mode'] == 'predict':
+        params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
+        network = Network(params)
+        network.predict()
 
 
