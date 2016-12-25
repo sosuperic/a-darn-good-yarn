@@ -22,6 +22,7 @@ class Dataset(object):
         self.params = params
         self.num_pts = defaultdict(int)
         self.num_batches = {}
+        self.label2count = defaultdict(int)            # used to balance dataset
 
         self.__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
         self.__cwd__ = os.path.realpath(os.getcwd())
@@ -126,16 +127,21 @@ class Dataset(object):
 
     def setup_graph(self):
         """Get lists of data, convert to tensors, set up pipeline"""
-        self.splits = defaultdict(dict)
-        self.files_list = self.get_tfrecords_files_list()
-        split_names = {0: 'train', 1: 'valid', 2: 'test'}
-        for i in range(3):
-            name = split_names[i]
-            img_batch, label_batch = self.input_pipeline(self.files_list[name])
-            self.splits[name]['img_batch'] = img_batch
-            self.splits[name]['label_batch'] = label_batch
+        if self.params['mode'] == 'train':
+            self.splits = defaultdict(dict)
+            self.files_list = self.get_tfrecords_files_list()
+            split_names = {0: 'train', 1: 'valid', 2: 'test'}
+            for i in range(3):
+                name = split_names[i]
+                img_batch, label_batch = self.input_pipeline(self.files_list[name])
+                self.splits[name]['img_batch'] = img_batch
+                self.splits[name]['label_batch'] = label_batch
+            return self.splits
 
-        return self.splits
+        elif self.params['mode'] == 'test':
+            self.files_list = self.get_tfrecords_files_list()
+            img_batch, label_batch = self.input_pipeline(self.files_list)
+            return img_batch, label_batch
 
 ########################################################################################################################
 ###
@@ -159,67 +165,77 @@ class SentibankDataset(Dataset):
     # Overriding / adding to parent methods
     ####################################################################################################################
     def get_tfrecords_files_list(self):
-        """Return list of tfrecords files"""
-        files_list = defaultdict(list)
+        """Return list of tfrecord files"""
+        if self.params['mode'] == 'train':
+            files_list = {}
+            # files_list['train'] = self._get_tfrecords_files_list('train')
+            files_list['valid'] = self._get_tfrecords_files_list('valid')
+            # Get test as well so we can get label counts and weight classes
+            # files_list['test'] = self._get_tfrecords_files_list('test')
 
-        label2count = defaultdict(int)            # used to balance dataset
+            # For debugging: uncomment this, and comment out the above train = and test =
+            files_list['train'] = files_list['valid']
+            files_list['test'] = files_list['valid']
+            self.num_pts['train'] = self.num_pts['valid']
+            self.num_pts['train'] = self.num_pts['valid']
 
-        # Iterate through directory, extract labels from biconcept
-        tfrecords_dir = os.path.join(self.__cwd__, TFRECORDS_PATH)
-        for split in [d for d in os.listdir(tfrecords_dir)]:
-            split = 'valid'
-            split_dir = os.path.join(tfrecords_dir, split)
-            for f in [f for f in os.listdir(split_dir) if not f.startswith('.')]:
-                bc = os.path.basename(f).split('.')[0]
+            # Save label2count so we can pass it using feed_dict for loss
+            with open(os.path.join(self.params['save_dir'], 'label2count.json'), 'w') as f:
+                sorted_label2count = {}
+                for label in sorted(self.label2count):
+                    sorted_label2count[label] = self.label2count[label]
+                json.dump(sorted_label2count, f)
 
-                # Potentially skip this biconcept
-                # If objective is predicting bc class, skip biconcept if not enough images
-                if self.params['obj'] == 'bc':
-                    num_imgs = len(os.listdir(os.path.join(self.__cwd__, BC_PATH, bc)))
-                    if num_imgs < self.params['min_bc_class_size']:
-                        continue
-                # Predicting sentiment (either regression or classification)
-                if 'sent' in self.params['obj']:
-                    if bc not in self.bc_lookup:
-                        continue
-                # Skip neutral concepts
-                if self.params['obj'] == 'sent_biclass':
-                    if abs(self.bc_lookup[bc]) < self.params['sent_neutral_absval']:
-                        continue
-                # Skip this category if label doesn't exist
-                label = get_label(bc, self.params['obj'],
-                                  bc_lookup=self.bc_lookup,
-                                  sent_neutral_absval=self.params['sent_neutral_absval'])
-                if label is None:
-                    continue
-
-                # Add all tfrecord
-                tfrecord_path = os.path.join(tfrecords_dir, split, f)
-                files_list[split].append(tfrecord_path)
-
-                # Add counts. TODO: this is slow (not a huge deal considering it's a one-time setup), but still...
-                c = 0
-                for _ in tf.python_io.tf_record_iterator(tfrecord_path):
-                    c += 1
-                self.num_pts[split] += c
-                label2count[label] += c
-            break
-
-        self.num_pts['train'] = self.num_pts['valid']
-        self.num_pts['test'] = self.num_pts['valid']
-        files_list['train'] = files_list['valid']
-        files_list['test'] = files_list['valid']
-
-        # Save label2count so we can pass it using feed_dict for loss
-        with open(os.path.join(self.params['save_dir'], 'label2count.json'), 'w') as f:
-            sorted_label2count = {}
-            for label in sorted(label2count):
-                sorted_label2count[label] = label2count[label]
-            json.dump(sorted_label2count, f)
+        elif self.params['mode'] == 'test':
+            files_list = self._get_tfrecords_files_list('test')
 
         self.num_batches = {k: int(v / self.params['batch_size']) for k,v in self.num_pts.items()}
         print self.num_pts
         print self.num_batches
+
+        return files_list
+
+    def _get_tfrecords_files_list(self, split_name):
+        """Helper function to return list of tfrecords files for a specific split"""
+        files_list = []
+
+        # Iterate through directory, extract labels from biconcept
+        tfrecords_dir = os.path.join(self.__cwd__, TFRECORDS_PATH)
+        split_dir = os.path.join(tfrecords_dir, split_name)
+        for f in [f for f in os.listdir(split_dir) if not f.startswith('.')]:
+            bc = os.path.basename(f).split('.')[0]
+
+            # Potentially skip this biconcept
+            # If objective is predicting bc class, skip biconcept if not enough images
+            if self.params['obj'] == 'bc':
+                num_imgs = len(os.listdir(os.path.join(self.__cwd__, BC_PATH, bc)))
+                if num_imgs < self.params['min_bc_class_size']:
+                    continue
+            # Predicting sentiment (either regression or classification)
+            if 'sent' in self.params['obj']:
+                if bc not in self.bc_lookup:
+                    continue
+            # Skip neutral concepts
+            if self.params['obj'] == 'sent_biclass':
+                if abs(self.bc_lookup[bc]) < self.params['sent_neutral_absval']:
+                    continue
+            # Skip this category if label doesn't exist
+            label = get_label(bc, self.params['obj'],
+                              bc_lookup=self.bc_lookup,
+                              sent_neutral_absval=self.params['sent_neutral_absval'])
+            if label is None:
+                continue
+
+            # Add all tfrecord
+            tfrecord_path = os.path.join(tfrecords_dir, split_name, f)
+            files_list.append(tfrecord_path)
+
+            # Add counts. TODO: this is slow (not a huge deal considering it's a one-time setup), but still...
+            c = 0
+            for _ in tf.python_io.tf_record_iterator(tfrecord_path):
+                c += 1
+            self.num_pts[split_name] += c
+            self.label2count[label] += c
 
         return files_list
 

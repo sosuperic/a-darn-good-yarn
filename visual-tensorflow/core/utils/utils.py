@@ -169,11 +169,12 @@ def load_model(sess, params):
     """Load model from checkpoint"""
     # First load graph
     # .meta file defines graph - they should all be the same? So just take any one
-    meta_file = [f for f in os.listdir(params['ckpt_dirpath']) if f.endswith('meta')][0]
-    meta_filepath = os.path.join(params['ckpt_dirpath'], meta_file)
-    saver = tf.train.import_meta_graph(meta_filepath)
+    # meta_file = [f for f in os.listdir(params['ckpt_dirpath']) if f.endswith('meta')][0]
+    # meta_filepath = os.path.join(params['ckpt_dirpath'], meta_file)
+    # saver = tf.train.import_meta_graph(meta_filepath)
 
     # Load weights
+    saver = tf.train.Saver(tf.all_variables())
     if params['load_epoch'] is not None:        # load the checkpoint for the given epoch
         fn = _get_ckpt_basename(params) + '-' + params['load_epoch']
         saver.restore(sess, os.path.join(params['ckpt_dirpath'], fn))

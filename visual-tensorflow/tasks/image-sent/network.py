@@ -66,8 +66,8 @@ class Network(object):
                     if j % 10 == 0:
                         tr_summary_writer.add_summary(summary, i * num_tr_batches + j)
 
-                    # if j == 10:
-                    #     break
+                    if j == 10:
+                        break
 
                 # Evaluate on validation set (potentially)
                 if (i+1) % self.params['val_every_epoch'] == 0:
@@ -104,40 +104,45 @@ class Network(object):
         self.logger = self._get_logger()
         self.output_dim = self.dataset.get_output_dim()
         with tf.Session() as sess:
-            # Get model
-            self.logger.info('Load model')
-            saver = load_model(sess, self.params)
-            # print sess.run(tf.trainable_variables()[0])
-
             # Get data
             self.logger.info('Getting test set')
-            splits = self.dataset.setup_graph()
-            te_img_batch, te_label_batch = splits['test']['img_batch'], splits['test']['label_batch']
+            te_img_batch, self.te_label_batch = self.dataset.setup_graph()
+
+            # Get model
+            self.logger.info('Building graph')
+            model = self._get_model(sess, te_img_batch)
 
             # Loss
-            self._get_loss(saver)
+            self._get_loss(model)
+
+            # Weights and gradients
+            grads = tf.gradients(self.loss, tf.trainable_variables())
+            self.grads_and_vars = list(zip(grads, tf.trainable_variables()))
 
             # Summary ops and writer
             summary_op = self._get_summary_ops()
-            summary_writer = tf.summary.FileWriter(self.params['save_dir'] + '/test', graph=tf.get_default_graph())
+            summary_writer = tf.summary.FileWriter(self.params['ckpt_dirpath'] + '/test', graph=tf.get_default_graph())
 
             # Initialize
             coord, threads = self._initialize(sess)
 
+            # Restore model now that graph is complete -- loads weights to variables in existing graph
+            self.logger.info('Restoring checkpoint')
+            saver = load_model(sess, self.params)
+
+            print sess.run(tf.trainable_variables()[0])
+
             # Test
             num_batches = self.dataset.get_num_batches('test')
             for j in range(num_batches):
-                loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op],
-                                                      feed_dict={'img_batch:0': te_img_batch.eval(),
-                                                                 'label_batch:0': te_label_batch.eval()})
+                loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op])
 
                 self.logger.info('Test minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
                 self.logger.info('................... -- Acc: {}'.format(acc_val))
 
-                # Write summary
-                if j % 1 == 0:
+                # # Write summary
+                if j % 10 == 0:
                     summary_writer.add_summary(summary, j)
-
 
             coord.request_stop()
             coord.join(threads)
@@ -179,7 +184,9 @@ class Network(object):
         # Get class weights
         # Formula: Divide each count into max count, the normalize:
         # Example: [35, 1, 5] -> [1, 3.5, 7] -> [0.08696, 0.30435, 0.608696]
-        label2count = json.load(open(os.path.join(self.params['save_dir'], 'label2count.json'), 'r'))
+        # ckpt_dir for test, save_dir for training
+        ckpt_dir =  self.params['save_dir'] if self.params['mode'] == 'train' else self.params['ckpt_dirpath']
+        label2count = json.load(open(os.path.join(ckpt_dir, 'label2count.json'), 'r'))
         label2count = [float(c) for l,c in label2count.items()]             # (num_classes, )
         self.logger.info('Class counts: {}'.format(label2count))
         max_count = max(label2count)
@@ -194,7 +201,8 @@ class Network(object):
         label2count = np.expand_dims(label2count, 1).transpose()            # (num_classes, 1) -> (1, num_classes)
         class_weights = tf.cast(tf.constant(label2count), tf.float32)
 
-        label_batch_op = tf.placeholder_with_default(self.tr_label_batch, shape=[self.params['batch_size']],
+        label_batch = self.tr_label_batch if self.params['mode'] == 'train' else self.te_label_batch
+        label_batch_op = tf.placeholder_with_default(label_batch, shape=[self.params['batch_size']],
                                                      name='label_batch')
 
         if self.params['obj'] == 'sent_reg':
@@ -215,16 +223,18 @@ class Network(object):
         if self.params['obj'] != 'sent_reg':    # classification, thus has accuracy
             self.acc_summary = tf.summary.scalar('accuracy', self.acc)
 
-        # Weights and gradients
+        # Weights and gradients. TODO: why doesn't this work for test? Type error
         for var in tf.trainable_variables():
             tf.summary.histogram(var.op.name, var)
         for grad, var in self.grads_and_vars:
             tf.summary.histogram(var.op.name+'/gradient', grad)
+
         summary_op = tf.summary.merge_all()
         return summary_op
 
     def _initialize(self, sess):
-        sess.run(tf.global_variables_initializer())
+        if self.params['mode'] == 'train':
+            sess.run(tf.global_variables_initializer())
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         return coord, threads

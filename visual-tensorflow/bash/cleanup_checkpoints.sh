@@ -8,7 +8,7 @@ for task_dir in */ ; do
     cd $task_dir/checkpoints
     for ckpt_dir in */ ; do
         if [ -d ${ckpt_dir} ]; then        # will not run if no directories are available
-            if [ -e "checkpoint" ]; then
+            if [ ! -e "$ckpt_dir/checkpoint" ]; then
                 rm -rf $ckpt_dir
             fi
         fi
