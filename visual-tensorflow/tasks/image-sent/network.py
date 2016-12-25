@@ -182,9 +182,10 @@ class Network(object):
         label2count = json.load(open(os.path.join(self.params['save_dir'], 'label2count.json'), 'r'))
         label2count = [float(c) for l,c in label2count.items()]             # (num_classes, )
         self.logger.info('Class counts: {}'.format(label2count))
+        max_count = max(label2count)
         for i, c in enumerate(label2count):
             if c != 0:
-                label2count[i] = max(label2count) / c
+                label2count[i] = max_count / c
             else:
                 label2count[i] = 0.0
         label2count = [w / sum(label2count) for w in label2count]
