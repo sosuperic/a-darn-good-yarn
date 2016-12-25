@@ -1,5 +1,7 @@
 # Network class called by main, with train, test functions
 
+import json
+import numpy as np
 import os
 import tensorflow as tf
 
@@ -55,6 +57,7 @@ class Network(object):
                 num_tr_batches = self.dataset.get_num_batches('train')
                 for j in range(num_tr_batches):
                     _, loss_val, acc_val, summary = sess.run([train_step, self.loss, self.acc, summary_op])
+                                                             # feed_dict={'class_weights:0': label2count})
 
                     self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
                     self.logger.info('................... -- Acc: {}'.format(acc_val))
@@ -173,13 +176,32 @@ class Network(object):
         return model
 
     def _get_loss(self, model):
-        label_batch_op = tf.placeholder_with_default(self.tr_label_batch,
-            shape=[self.params['batch_size']], name='label_batch')
+        # Get class weights
+        # Formula: Divide each count into max count, the normalize:
+        # Example: [35, 1, 5] -> [1, 3.5, 7] -> [0.08696, 0.30435, 0.608696]
+        label2count = json.load(open(os.path.join(self.params['save_dir'], 'label2count.json'), 'r'))
+        label2count = [float(c) for l,c in label2count.items()]             # (num_classes, )
+        self.logger.info('Class counts: {}'.format(label2count))
+        for i, c in enumerate(label2count):
+            if c != 0:
+                label2count[i] = max(label2count) / c
+            else:
+                label2count[i] = 0.0
+        label2count = [w / sum(label2count) for w in label2count]
+        self.logger.info('Class weights: {}'.format(label2count))
+        label2count = np.array(label2count)
+        label2count = np.expand_dims(label2count, 1).transpose()            # (num_classes, 1) -> (1, num_classes)
+        class_weights = tf.cast(tf.constant(label2count), tf.float32)
+
+        label_batch_op = tf.placeholder_with_default(self.tr_label_batch, shape=[self.params['batch_size']],
+                                                     name='label_batch')
+
         if self.params['obj'] == 'sent_reg':
             self.loss = tf.sqrt(tf.reduce_mean(tf.square(tf.sub(model.last_fc, label_batch_op))))
         else:
             labels_onehot = tf.one_hot(label_batch_op, self.output_dim)     # (batch_size, num_classes)
-            self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(model.probs, labels_onehot))
+            weighted_logits = tf.mul(model.probs, class_weights)            # (batch_size, num_classes)
+            self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(weighted_logits, labels_onehot))
 
             # Accuracy
             acc = tf.equal(tf.cast(tf.argmax(model.probs, 1), tf.int32), label_batch_op)

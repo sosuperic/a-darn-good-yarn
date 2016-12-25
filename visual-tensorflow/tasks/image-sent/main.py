@@ -76,6 +76,7 @@ if __name__ == '__main__':
         checkpoints_dir = os.path.join(__location__, 'checkpoints')
         save_dir = make_checkpoint_dir(checkpoints_dir, params)
         params['save_dir'] = save_dir
+        print save_dir
 
         network = Network(params)
         network.train()

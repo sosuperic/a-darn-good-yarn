@@ -306,7 +306,9 @@ def get_label(bc, obj, bc_lookup=None, sent_neutral_absval=None):
             return None
     elif obj == 'emo':
         if len(bc_lookup[bc]) > 0:
-            emo = max(bc_lookup[bc])
+            # TODO: what if there's a tie? (e.g. anger: 1, fear: 1) (this is probably pretty common)
+            emo = bc_lookup[bc].most_common(1)[0][0]    # list of tuples of most occurring elements
+            print bc, emo, map_label_to_int(emo, obj)
             return map_label_to_int(emo, obj)
         else:       # no emotions for biconcept
             return None
@@ -487,6 +489,7 @@ def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256,
                     print e
 
 if __name__ == '__main__':
+
     # Set up commmand line arguments
     parser = argparse.ArgumentParser(description='Download and process data')
     parser.add_argument('--bc_imgfps', dest='bc_imgfps', action='store_true')
