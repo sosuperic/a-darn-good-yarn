@@ -27,6 +27,9 @@ YOU_IMEMO_PATH = 'data/you_imemo/agg'
 # MVSO dataset - mutlilingual, larger version of Sentibank VSO; also has emotions
 MVSO_PATH = 'data/MVSO'
 
+# Videos path
+VIDEOS_PATH = 'data/videos'
+
 ########################################################################################################################
 # Sentibank
 ########################################################################################################################
@@ -466,6 +469,35 @@ def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256,
                 except Exception as e:
                     print e
 
+########################################################################################################################
+# Videos
+########################################################################################################################
+def save_video_frames(dir):
+    """
+    Loop over videos within dir and save frames to dir/vid/framess
+    """
+    # vid_exts = ['webm', 'mkv', 'flv', 'vob', 'ogv', 'ogg', 'drc', 'gif', 'gifv', 'mng', 'avi', 'mov', 'qt', 'wmv',
+    #             'yuv', 'rm', 'rmvb', 'asf', 'amv', 'mp4', 'm4p', 'm4v', 'mpg', 'mp2', 'mpeg', 'mpe', 'mpv', 'm2v',
+    #             'm4v', 'svi', '3gp', '3g2', 'mxf', 'roq', 'nsv', 'flv', 'f4v', 'f4p', 'f4a', 'f4b']
+    vid_exts = ['mp4']
+    mr = MovieReader()
+
+    vids_path = os.path.join(VIDEOS_PATH, dir)
+    for vid_name in os.listdir(vids_path):
+        vid_dirpath = os.path.join(vids_path, vid_name)
+        files = os.listdir(vid_dirpath)
+        movie_file = None
+        for f in files:
+            for ext in vid_exts:
+                if f.endswith(ext):
+                    movie_file = f
+                    break
+        print movie_file
+        if movie_file:
+            movie_path = os.path.join(vid_dirpath, movie_file)
+            print movie_path
+            mr.write_frames(movie_path)
+
 if __name__ == '__main__':
 
     # Set up commmand line arguments
@@ -473,11 +505,13 @@ if __name__ == '__main__':
     parser.add_argument('--bc_imgfps', dest='bc_imgfps', action='store_true')
     parser.add_argument('--bc_traintest', dest='bc_traintest', action='store_true')
     parser.add_argument('--move_bad_jpgs', dest='move_bad_jpgs', action='store_true')
+    parser.add_argument('--sentibank_to_tfrecords', dest='sentibank_to_tfrecords', action='store_true')
     parser.add_argument('--you_dl_imgs', dest='you_dl_imgs', action='store_true')
     parser.add_argument('--mvso_sent', dest='mvso_sent', action='store_true')
     parser.add_argument('--mvso_emo', dest='mvso_emo', action='store_true')
     parser.add_argument('--mvso_dl_imgs', dest='mvso_dl_imgs', action='store_true')
-    parser.add_argument('--sentibank_to_tfrecords', dest='sentibank_to_tfrecords', action='store_true')
+    parser.add_argument('--save_video_frames', dest='save_video_frames', action='store_true')
+    parser.add_argument('--videos_dir', dest='videos_dir', default=None, help='folder that contains dirs (one movie each)')
     cmdline = parser.parse_args()
 
     if cmdline.bc_imgfps:
@@ -497,3 +531,5 @@ if __name__ == '__main__':
         download_MVSO_imgs()
     elif cmdline.sentibank_to_tfrecords:
         write_sentibank_to_tfrecords()
+    elif cmdline.save_video_frames:
+        save_video_frames(cmdline.videos_dir)

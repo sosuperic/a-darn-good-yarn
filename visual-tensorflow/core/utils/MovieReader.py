@@ -21,7 +21,11 @@ class MovieReader(object):
         return fps
 
     def get_num_frames(self, vidcap):
-        length = int(vidcap.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT))
+        (major_ver, minor_ver, subminor_ver) = (cv2.__version__).split('.')
+        if int(major_ver)  < 3 :
+            length = int(vidcap.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT))
+        else:
+            length = vidcap.get(cv2.CAP_PROP_FRAME_COUNT)
         print 'Number of frames {}'.format(length)
         return length
 
@@ -91,12 +95,11 @@ class MovieReader(object):
                 result = frame[h_offset:h_offset+target_h,:,:]
         return result
 
-    def write_frames(self, input_path, output_dir, sample_rate_in_sec, target_w, target_h):
+    def write_frames(self, input_path, output_dir=None, sample_rate_in_sec=1, target_w=256, target_h=256):
         vidcap = cv2.VideoCapture(input_path)
         fps = self.get_fps(vidcap)
         num_frames = self.get_num_frames(vidcap)
         frame_indices = self.get_frame_indices(fps, num_frames, sample_rate_in_sec)
-
 
         # Make output directory if not exists
         if output_dir is None:
@@ -129,8 +132,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Read a movie, write frames, etc.')
 
     # Defaults
-    parser.add_argument('-i', '--input_path', dest='input_path', default=None)
-    parser.add_argument('-o', '--output_dir', dest='output_dir', default=None)
+    parser.add_argument('-i', '--input_path', dest='input_path', default=None, help='path to video')
+    parser.add_argument('-o', '--output_dir', dest='output_dir', default=None,
+                        help='if None, mkdir in same directory as input_path called frames')
     parser.add_argument('-sr', '--sample_rate_in_sec', dest='sample_rate_in_sec', default=1)
     parser.add_argument('-tw', '--target_w', dest='target_w', default=256)
     parser.add_argument('-th', '--target_h', dest='target_h', default=256)
