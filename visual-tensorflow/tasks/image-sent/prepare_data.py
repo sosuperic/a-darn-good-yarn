@@ -336,28 +336,6 @@ def move_bad_jpgs():
                 print bc, img_fn
                 os.rename(img_fp, os.path.join(bad_jpgs_dir, '{}-{}'.format(bc, img_fn)))
 
-# Uses output from bash/identify_bad_jpegs.sh
-# def move_bad_jpgs():
-#     """Move bad jpegs out of biconcept folders"""
-#     # Make directory to store bad jpgs
-#     bad_jpgs_dir = os.path.join(FLICKR_PATH, 'bad_jpgs')
-#     if not os.path.exists(bad_jpgs_dir):
-#         os.mkdir(bad_jpgs_dir)
-#
-#     # For each bc folder, read the good jpgs list and find out the bad jpgs
-#     jpg_check_dir = os.path.join(FLICKR_PATH, 'jpg_check')
-#     for bc in os.listdir(jpg_check_dir):
-#         with open(os.path.join(FLICKR_PATH, bc, 'ok_jpgs.txt'), 'r') as f:
-#             good_fns = f.readlines()
-#         all_jpg_fns = [f for f in os.listdir(os.path.join(BC_PATH, bc)) if f.endswith('txt')]
-#         bad_fns = set(all_jpg_fns) - set(good_fns)
-#
-#         # Move bad jpg to bad jpg folder
-#         for bad_fn in bad_fns:
-#             if not os.path.exists(os.path.join(bad_jpgs_dir, bc)):
-#                 os.mkdir(os.path.join(bad_jpgs_dir, bc))
-#             os.rename(os.path.join(BC_PATH, bc, bad_fn), os.path.join(bad_jpgs_dir, bc, '{}-{}'.format(bc, bad_fn)))
-
 ########################################################################################################################
 # You image emotion
 ########################################################################################################################
