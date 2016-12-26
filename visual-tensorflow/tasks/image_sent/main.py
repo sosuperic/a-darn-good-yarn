@@ -12,6 +12,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='main function to train and test image-sent models')
 
     parser.add_argument('-m', '--mode', dest='mode', default='train', help='train,test,predict')
+    parser.add_argument('--debug', dest='debug', action='store_true', default=False,
+                        help='only use valid set so speed up loading (dont load train')
     parser.add_argument('-ds', '--dataset', dest='dataset', default='Sentibank', help='Sentibank,MVSO,you_imemo')
     parser.add_argument('--min_bc_cs', dest='min_bc_class_size', type=int, default=None,
                         help='when obj is bc, only use biconcepts if there is at least min_bc_cs images')

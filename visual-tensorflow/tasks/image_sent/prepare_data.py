@@ -321,7 +321,7 @@ def get_label(bc, obj, bc_lookup=None, sent_neutral_absval=None):
         if len(bc_lookup[bc]) > 0:
             # TODO: what if there's a tie? (e.g. anger: 1, fear: 1) (this is probably pretty common)
             emo = bc_lookup[bc].most_common(1)[0][0]    # list of tuples of most occurring elements
-            print bc, emo, map_label_to_int(emo, obj)
+            # print bc, emo, map_label_to_int(emo, obj)
             return map_label_to_int(emo, obj)
         else:       # no emotions for biconcept
             return None

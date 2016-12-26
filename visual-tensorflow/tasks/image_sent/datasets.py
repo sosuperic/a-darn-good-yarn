@@ -116,16 +116,19 @@ class SentibankDataset(Dataset):
         """Return list of tfrecord files"""
         if self.params['mode'] == 'train':
             files_list = {}
-            files_list['train'] = self._get_tfrecords_files_list('train')
-            files_list['valid'] = self._get_tfrecords_files_list('valid')
-            # Get test as well so we can get label counts and weight classes
-            files_list['test'] = self._get_tfrecords_files_list('test')
 
-            # For debugging: uncomment this, and comment out the above train = and test =
-            # files_list['train'] = files_list['valid']
-            # files_list['test'] = files_list['valid']
-            # self.num_pts['train'] = self.num_pts['valid']
-            # self.num_pts['train'] = self.num_pts['valid']
+            if self.params['debug']:
+                # Only retrieve valid, set train and test to it
+                files_list['valid'] = self._get_tfrecords_files_list('valid')
+                files_list['train'] = files_list['valid']
+                files_list['test'] = files_list['valid']
+                self.num_pts['train'] = self.num_pts['valid']
+                self.num_pts['train'] = self.num_pts['valid']
+            else:
+                files_list['train'] = self._get_tfrecords_files_list('train')
+                files_list['valid'] = self._get_tfrecords_files_list('valid')
+                # Get test as well so we can get label counts and weight classes
+                files_list['test'] = self._get_tfrecords_files_list('test')
 
             # Save label2count so we can pass it using feed_dict for loss
             with open(os.path.join(self.params['save_dir'], 'label2count.json'), 'w') as f:
