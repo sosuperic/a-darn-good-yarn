@@ -85,11 +85,13 @@ if __name__ == '__main__':
         network.train()
 
     elif params['mode'] == 'test':
+        params['dropout'] = 1.0
         params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
         network = Network(params)
         network.test()
 
     elif params['mode'] == 'predict':
+        params['dropout'] = 1.0
         params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
         network = Network(params)
         network.predict()

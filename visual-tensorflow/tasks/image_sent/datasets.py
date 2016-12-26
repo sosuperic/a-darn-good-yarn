@@ -318,7 +318,7 @@ class PredictionDataset(Dataset):
         self.files_list = self.get_files_list()
         self.files_tensor = tf.convert_to_tensor(self.files_list, dtype=tf.string)
 
-        img = self.input_pipeline(self.files_list)
+        img = self.input_pipeline(self.files_tensor)
         img = self.preprocess_img(img)
         img_batch = tf.train.batch([img], batch_size=self.params['batch_size'])
         return img_batch
