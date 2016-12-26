@@ -37,6 +37,9 @@ MVSO_PATH = 'data/MVSO'
 # Videos path
 VIDEOS_PATH = 'data/videos'
 
+# Plutchik
+PLUTCHIK_PATH = 'data/plutchik'
+
 ########################################################################################################################
 # Sentibank
 ########################################################################################################################
@@ -555,6 +558,26 @@ def save_video_frames(dir):
             print movie_path
             mr.write_frames(movie_path)
 
+########################################################################################################################
+# Plutchik's wheel of emotions and color
+########################################################################################################################
+def save_plutchik_color_imgs():
+    """Parse txt file with emotions and RGB colors, save solid color images"""
+    # label2rgb = {}
+    with open(os.path.join(PLUTCHIK_PATH, 'plutchik_colors.txt'), 'r') as f:
+        for i, line in enumerate(f.readlines()):
+            m = re.match(r'(\w+) - R: (\w+) G: (\w+) B: (\w+)', line)
+            label, r, g, b = m.group(1), m.group(2), m.group(3), m.group(4)
+            print i, line, r, g, b
+            # label2rgb[label] = [r,g,b]
+            im = np.zeros([256, 256, 3], 'uint8')
+            im[:,:,0] = np.ones([256, 256]) * int(r)
+            im[:,:,1] = np.ones([256, 256]) * int(g)
+            im[:,:,2] = np.ones([256, 256]) * int(b)
+
+            import scipy.misc
+            scipy.misc.imsave(os.path.join(PLUTCHIK_PATH, '{}_{}.jpg'.format(i, label)), im)
+
 if __name__ == '__main__':
 
     # Set up commmand line arguments
@@ -570,6 +593,7 @@ if __name__ == '__main__':
     parser.add_argument('--mvso_dl_imgs', dest='mvso_dl_imgs', action='store_true')
     parser.add_argument('--save_video_frames', dest='save_video_frames', action='store_true')
     parser.add_argument('--videos_dir', dest='videos_dir', default=None, help='folder that contains dirs (one movie each)')
+    parser.add_argument('--save_plutchik_color_imgs', dest='save_plutchik_color_imgs', action='store_true')
     cmdline = parser.parse_args()
 
     if cmdline.bc_imgfps:
@@ -593,3 +617,5 @@ if __name__ == '__main__':
         download_MVSO_imgs()
     elif cmdline.save_video_frames:
         save_video_frames(cmdline.videos_dir)
+    elif cmdline.save_plutchik_color_imgs:
+        save_plutchik_color_imgs()
