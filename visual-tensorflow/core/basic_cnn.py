@@ -6,12 +6,13 @@ import tensorflow as tf
 
 class BasicVizsentCNN(object):
     # Following architecture of https://arxiv.org/pdf/1509.06041v1.pdf
-    def __init__(self, batch_size=None, img_w=None, img_h=None, output_dim=None, imgs=None):
+    def __init__(self, batch_size=None, img_w=None, img_h=None, output_dim=None, imgs=None, dropout_keep=None):
         self.batch_size = batch_size
         self.img_w = img_w
         self.img_h = img_h
         self.output_dim = output_dim
         self.imgs = imgs
+        self.dropout_keep = dropout_keep
 
         # Create graph
         # Input
@@ -21,31 +22,40 @@ class BasicVizsentCNN(object):
         # Rest of graph
         with tf.variable_scope('convrelupool1'):
             self.conv1 = self.conv(self.img_batch, [11, 11, 3, 96], [96], [1, 4, 4, 1])
-            self.relu1 = tf.nn.relu(self.conv1)
+            self.relu1 = tf.nn.tanh(self.conv1)
+            # self.relu1 = tf.nn.relu(self.conv1)
             self.pool1 =  tf.nn.max_pool(self.relu1, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
+            self.norm1 = tf.nn.lrn(self.pool1, 4, bias=1.0, alpha=0.001 / 9.0, beta=0.75)
             # TODO: Normalization?
 
         with tf.variable_scope('convrelupool2'):
-            self.conv2 = self.conv(self.pool1, [5, 5, 96, 256], [256], [1, 2, 2, 1])
-            self.relu2 = tf.nn.relu(self.conv2)
+            self.conv2 = self.conv(self.norm1, [5, 5, 96, 256], [256], [1, 2, 2, 1])
+            self.relu2 = tf.nn.tanh(self.conv2)
+            # self.relu2 = tf.nn.relu(self.conv2)
             self.pool2 =  tf.nn.max_pool(self.relu2, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
+            self.norm2 = tf.nn.lrn(self.pool2, 4, bias=1.0, alpha=0.001 / 9.0, beta=0.75)
             # TODO: Normalization?
 
         with tf.variable_scope('fc') as scope:
-            self.dropout_rate = tf.constant(0.5)
-            self.reshaped = tf.reshape(self.pool2, [self.batch_size, -1])     # (B,  _)
-            self.fc1 = self.fc(self.reshaped, 512, '1')         # (B, 512)
-            self.relu1 = tf.nn.relu(self.fc1)
-            self.dropout1 = tf.nn.dropout(self.relu1, self.dropout_rate)
+            self.dropout_keep = tf.constant(self.dropout_keep)
+            self.reshaped = tf.reshape(self.norm2, [self.batch_size, -1])     # (B,  _)
+            self.dropout0 = tf.nn.dropout(self.reshaped, self.dropout_keep)
+            self.fc1 = self.fc(self.dropout0, 512, '1')         # (B, 512)
+            self.relu1 = tf.nn.tanh(self.fc1)
+            # self.relu1 = tf.nn.relu(self.fc1)
+            self.dropout1 = tf.nn.dropout(self.relu1, self.dropout_keep)
             self.fc2 = self.fc(self.dropout1, 512, '2')              # (B, 512)
-            self.relu2 = tf.nn.relu(self.fc2)
-            self.dropout2 = tf.nn.dropout(self.relu2, self.dropout_rate)
+            self.relu2 = tf.nn.tanh(self.fc2)
+            # self.relu2 = tf.nn.relu(self.fc2)
+            self.dropout2 = tf.nn.dropout(self.relu2, self.dropout_keep)
             self.fc3 = self.fc(self.dropout2, 24, '3')               # (B, 24)
-            self.relu3 = tf.nn.relu(self.fc3)
-            self.dropout3 = tf.nn.dropout(self.relu3, self.dropout_rate)
+            self.relu3 = tf.nn.tanh(self.fc3)
+            # self.relu3 = tf.nn.relu(self.fc3)
+            self.dropout3 = tf.nn.dropout(self.relu3, self.dropout_keep)
             self.fc4 = self.fc(self.dropout3, self.output_dim, '4')  # (B, output_dim)
 
         self.last_fc = self.fc4
+        self.probs = tf.nn.softmax(self.last_fc)
 
     def conv(self, x, kernel_shape, bias_shape, strides):
         weights = tf.get_variable('weights', kernel_shape, initializer=tf.random_normal_initializer())

@@ -6,8 +6,9 @@ img_crop_w: 224
 img_crop_h: 224
 
 batch_size: 16
-epochs: 10
-save_every_epoch: 2
+epochs: 20
+dropout: 0.5
+save_every_epoch: 1
 val_every_epoch: 1
 
 sent_neutral_absval: 0.5
@@ -21,8 +22,8 @@ basic_cnn:
         lr: 0.01
     sent_biclass:
         optim: adam
-        lr: 0.01
-        ckpt_dir: 2016-12-25___07-32-18
+        lr: 0.001
+        ckpt_dir: 2016-12-26___02-09-30
     sent_triclass:
         optim: adam
         lr: 0.01
@@ -39,7 +40,7 @@ vgg:
         lr: 0.01
     sent_biclass:
         optim: adam
-        lr: 0.01
+        lr: 0.005
     sent_triclass:
         optim: adam
         lr: 0.01

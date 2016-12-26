@@ -41,6 +41,8 @@ class Network(object):
             grads = tf.gradients(self.loss, tf.trainable_variables())
             self.grads_and_vars = list(zip(grads, tf.trainable_variables()))
             train_step = optimizer.apply_gradients(grads_and_vars=self.grads_and_vars)
+            # capped_grads_and_vars = [(tf.clip_by_value(gv[0], -5., 5.), gv[1]) for gv in self.grads_and_vars]
+            # train_step = optimizer.apply_gradients(grads_and_vars=capped_grads_and_vars)
 
             # Summary ops and writer
             summary_op = self._get_summary_ops()
@@ -57,10 +59,11 @@ class Network(object):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_tr_batches = self.dataset.get_num_batches('train')
                 for j in range(num_tr_batches):
-                    _, last_fc, loss_val, acc_val, summary = sess.run([train_step, model.last_fc, self.loss, self.acc, summary_op])
+                    _, imgs, last_fc, loss_val, acc_val, summary = sess.run([train_step, tr_img_batch, model.last_fc, self.loss, self.acc, summary_op])
                                                              # feed_dict={'class_weights:0': label2count})
 
-                    print last_fc
+                    # print last_fc
+                    # print imgs[0] == imgs[1]
 
                     self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
                     self.logger.info('................... -- Acc: {}'.format(acc_val))
@@ -181,11 +184,17 @@ class Network(object):
             # Predict
             idx2label = self.get_idx2label()
             num_batches = self.dataset.get_num_batches('predict')
-            with open(os.path.join(preds_dir, '{}.csv'.format(self.params['obj'])), 'w') as f:
+            if self.params['load_epoch'] is not None:
+                fn = '{}_{}.csv'.format(self.params['obj'], self.params['load_epoch'])
+            else:
+                fn = '{}.csv'.format(self.params['obj'])
+            with open(os.path.join(preds_dir, fn), 'w') as f:
                 labels = [idx2label[i] for i in range(self.output_dim)]
                 f.write('{}\n'.format(','.join(labels)))
                 for j in range(num_batches):
-                    probs = sess.run(model.probs)
+                    last_fc, probs = sess.run([model.last_fc, model.probs])
+                    print last_fc
+                    print probs
                     for frame_prob in probs:
                         frame_prob = ','.join([str(v) for v in frame_prob])
                         f.write('{}\n'.format(frame_prob))
@@ -214,7 +223,8 @@ class Network(object):
                                     img_w=self.params['img_crop_w'],
                                     img_h=self.params['img_crop_h'],
                                     output_dim=self.output_dim,
-                                    imgs=img_batch)
+                                    imgs=img_batch,
+                                    dropout_keep=self.params['dropout'])
         elif 'vgg' in self.params['arch']:
             load_weights = True if self.params['arch'] == 'vgg_finetune' else False
             model = vgg16(batch_size=self.params['batch_size'],

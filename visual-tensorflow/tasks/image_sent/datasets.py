@@ -3,12 +3,15 @@
 from collections import defaultdict, Counter
 import json
 from natsort import natsorted
+import numpy as np
 import os
+import pickle
 import tensorflow as tf
 
 from prepare_data import get_bc2sent, get_bc2emo, get_bc2idx, get_label
 
 BC_PATH = 'data/Sentibank/Flickr/bi_concepts1553'
+BC_MEANSTD_PATH = 'data/Sentibank/Flickr/bc_channelmeanstd'
 TFRECORDS_PATH = 'data/Sentibank/Flickr/tfrecords'
 EMOLEX_PATH = 'data/emolex/NRC-emotion-lexicon-wordlevel-alphabetized-v0.92.txt'
 
@@ -113,16 +116,16 @@ class SentibankDataset(Dataset):
         """Return list of tfrecord files"""
         if self.params['mode'] == 'train':
             files_list = {}
-            # files_list['train'] = self._get_tfrecords_files_list('train')
+            files_list['train'] = self._get_tfrecords_files_list('train')
             files_list['valid'] = self._get_tfrecords_files_list('valid')
             # Get test as well so we can get label counts and weight classes
-            # files_list['test'] = self._get_tfrecords_files_list('test')
+            files_list['test'] = self._get_tfrecords_files_list('test')
 
             # For debugging: uncomment this, and comment out the above train = and test =
-            files_list['train'] = files_list['valid']
-            files_list['test'] = files_list['valid']
-            self.num_pts['train'] = self.num_pts['valid']
-            self.num_pts['train'] = self.num_pts['valid']
+            # files_list['train'] = files_list['valid']
+            # files_list['test'] = files_list['valid']
+            # self.num_pts['train'] = self.num_pts['valid']
+            # self.num_pts['train'] = self.num_pts['valid']
 
             # Save label2count so we can pass it using feed_dict for loss
             with open(os.path.join(self.params['save_dir'], 'label2count.json'), 'w') as f:
@@ -144,9 +147,14 @@ class SentibankDataset(Dataset):
         """Helper function to return list of tfrecords files for a specific split"""
         files_list = []
 
+        bc2mean = pickle.load(open(os.path.join(BC_MEANSTD_PATH , 'bc2channelmean.pkl'), 'r'))
+        bc2std =pickle.load(open(os.path.join(BC_MEANSTD_PATH , 'bc2channelstd.pkl'), 'r'))
+        mean, std = np.zeros(3), np.zeros(3)
+
         # Iterate through directory, extract labels from biconcept
         tfrecords_dir = os.path.join(self.__cwd__, TFRECORDS_PATH)
         split_dir = os.path.join(tfrecords_dir, split_name)
+        n = 0
         for f in [f for f in os.listdir(split_dir) if not f.startswith('.')]:
             bc = os.path.basename(f).split('.')[0]
 
@@ -181,6 +189,24 @@ class SentibankDataset(Dataset):
                 c += 1
             self.num_pts[split_name] += c
             self.label2count[label] += c
+            n += c
+
+            # Load mean and std stats for this biconcept
+            # Running average: new average = old average * (n-c)/n + sum of new value/n).
+            # Where n = total count, m = count in this update
+            try:    # hmm, 3 / 1553 biconcepts are missing
+                cur_bc_mean, cur_bc_std = bc2mean[bc], bc2std[bc]
+                mean = (mean * (n-c) / float(n)) + (cur_bc_mean * c / float(n))
+                std = (std * (n-c) / float(n)) + (cur_bc_std * c / float(n))
+            except:
+                continue
+
+        # Save mean and std so we can standardize data in graph
+        self.mean = mean
+        self.std = std
+
+        print 'mean: {}'.format(self.mean)
+        print 'std: {}'.format(self.std)
 
         return files_list
 
@@ -252,7 +278,10 @@ class SentibankDataset(Dataset):
 
     def preprocess_img(self, img):
         img = super(SentibankDataset, self).preprocess_img(img)
-        # Do more things to img
+
+        # Standardize
+        img = tf.sub(img, tf.cast(tf.constant(self.mean), tf.float32))
+        img = tf.div(img, tf.cast(tf.constant(self.std), tf.float32))
         return img
 
 ########################################################################################################################

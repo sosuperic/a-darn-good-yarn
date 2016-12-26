@@ -8,7 +8,6 @@ import pickle
 from PIL import Image
 from pprint import pprint
 import re
-from skimage import color
 import tensorflow as tf
 import urllib
 
@@ -347,6 +346,51 @@ def move_bad_jpgs():
                 print bc, img_fn
                 os.rename(img_fp, os.path.join(bad_jpgs_dir, '{}-{}'.format(bc, img_fn)))
 
+
+def save_bc_channel_mean_std():
+    """Save channel-wise mean and stddev so we can standardize"""
+    # Make directory to save
+    out_dir = os.path.join('data/Sentibank/Flickr/', 'bc_channelmeanstd')
+    if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
+
+    bc2mean = {}
+    bc2std = {}
+
+    bc2img_fps = get_all_bc_img_fps()
+    for bc, img_fps in bc2img_fps.items():
+        mean, std = np.zeros(3), np.zeros(3)
+        n = 0
+        for img_fp in img_fps:
+            try:
+                im = Image.open(img_fp)
+                if im.mode != 'RGB':      # type L, P, etc. shows some type of Flickr unavailable photo img
+                    os.remove(img_fp)
+                    continue
+                im = np.array(im)
+                im = im.astype(np.float32)
+                im /= 256.0               # convert to [0,)
+                for c in range(3):
+                    mean[c] += im[:,:,c].mean()
+                    std[c] += im[:,:,c].std()
+                n += 1
+            except Exception as e:
+                print e
+
+        mean /= float(n)
+        std /= float(n)
+        print '{} mean: {}'.format(bc, mean)
+        print '{} std: {}'.format(bc, std)
+
+        bc2mean[bc] = mean
+        bc2std[bc] = std
+
+    with open(os.path.join(out_dir, 'bc2channelmean.pkl'.format(bc)), 'w') as f:
+        pickle.dump(bc2mean, f, protocol=2)
+    with open(os.path.join(out_dir, 'bc2channelstd.pkl'.format(bc)), 'w') as f:
+        pickle.dump(bc2std, f, protocol=2)
+
+
 ########################################################################################################################
 # You image emotion
 ########################################################################################################################
@@ -440,7 +484,7 @@ def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256,
                 i += 1
                 continue
             else:
-                if i < 1785550:
+                if i < 2578450:
                     i += 1
                     continue
                 bc, url = line.strip().split(',')
@@ -519,6 +563,7 @@ if __name__ == '__main__':
     parser.add_argument('--bc_traintest', dest='bc_traintest', action='store_true')
     parser.add_argument('--move_bad_jpgs', dest='move_bad_jpgs', action='store_true')
     parser.add_argument('--sentibank_to_tfrecords', dest='sentibank_to_tfrecords', action='store_true')
+    parser.add_argument('--bc_channel_mean_std', dest='bc_channel_mean_std', action='store_true')
     parser.add_argument('--you_dl_imgs', dest='you_dl_imgs', action='store_true')
     parser.add_argument('--mvso_sent', dest='mvso_sent', action='store_true')
     parser.add_argument('--mvso_emo', dest='mvso_emo', action='store_true')
@@ -534,6 +579,10 @@ if __name__ == '__main__':
         pprint(get_bc_traintest())
     elif cmdline.move_bad_jpgs:
         move_bad_jpgs()
+    elif cmdline.sentibank_to_tfrecords:
+        write_sentibank_to_tfrecords()
+    elif cmdline.bc_channel_mean_std:
+        save_bc_channel_mean_std()
     elif cmdline.you_dl_imgs:
         retrieve_you_imemo_imgs()
     elif cmdline.mvso_sent:
@@ -542,7 +591,5 @@ if __name__ == '__main__':
         pprint(get_MVSO_bc2emotion2value())
     elif cmdline.mvso_dl_imgs:
         download_MVSO_imgs()
-    elif cmdline.sentibank_to_tfrecords:
-        write_sentibank_to_tfrecords()
     elif cmdline.save_video_frames:
         save_video_frames(cmdline.videos_dir)
