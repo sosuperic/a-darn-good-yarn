@@ -22,14 +22,14 @@ basic_cnn:
         lr: 0.01
     sent_biclass:
         optim: adam
-        lr: 0.001
+        lr: 0.01
         ckpt_dir: 2016-12-26___02-09-30
     sent_triclass:
         optim: adam
         lr: 0.01
     emo:
         optim: adam
-        lr: 0.01
+        lr: 0.005
     bc:
         optim: adam
         lr: 0.01

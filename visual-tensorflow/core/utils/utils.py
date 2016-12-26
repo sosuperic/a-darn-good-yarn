@@ -152,7 +152,7 @@ def get_optimizer(optim_str, lr):
     if optim_str == 'adagrad':
         optim = tf.train.AdagradOptimizer(lr)
     if optim_str == 'adam':
-        optim = tf.train.AdamOptimizer(learning_rate=lr)
+        optim = tf.train.AdamOptimizer(learning_rate=lr, epsilon=1.0)
     if optim_str == 'rmsprop':
         optim = tf.train.RMSPropOptimizer(lr)
 
