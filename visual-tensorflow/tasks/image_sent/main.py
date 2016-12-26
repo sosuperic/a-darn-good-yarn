@@ -33,6 +33,8 @@ if __name__ == '__main__':
     parser.add_argument('-e', '--epochs', dest='epochs', type=int, default=None, help='max number of epochs')
     parser.add_argument('--dropout', dest='dropout', type=float, default=None,
                         help='use 1.0 when testing -- tensorflow uses keep_prob')
+    parser.add_argument('--weight_classes', dest='weight_classes', action='store_true', default=False,
+                        help='weight classes for class imbalance')
 
     # Job specific training params
     parser.add_argument('-lr', dest='lr', type=float, default=None, help='learning rate')
