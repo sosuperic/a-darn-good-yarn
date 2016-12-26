@@ -491,7 +491,12 @@ def save_video_frames(dir):
     mr = MovieReader()
 
     vids_path = os.path.join(VIDEOS_PATH, dir)
-    for vid_name in os.listdir(vids_path):
+    for vid_name in [d for d in os.listdir(vids_path) if not d.startswith('.')]:
+        if os.path.exists(os.path.join(vids_path, vid_name, 'frames')):
+            print vid_name
+            print 'frames already exists'
+            continue
+
         vid_dirpath = os.path.join(vids_path, vid_name)
         files = os.listdir(vid_dirpath)
         movie_file = None
