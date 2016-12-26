@@ -207,6 +207,11 @@ class SentibankDataset(Dataset):
         # Save mean and std so we can standardize data in graph
         self.mean = mean
         self.std = std
+        # Pickle so we can use at test time
+        with open(os.path.join(self.params['save_dir'], 'mean.pkl'), 'w') as f:
+            pickle.dump(mean, f, protocol=2)
+        with open(os.path.join(self.params['save_dir'], 'std.pkl'), 'w') as f:
+            pickle.dump(std, f, protocol=2)
 
         print 'mean: {}'.format(self.mean)
         print 'std: {}'.format(self.std)
@@ -293,6 +298,12 @@ class SentibankDataset(Dataset):
 ###
 ########################################################################################################################
 class PredictionDataset(Dataset):
+    def __init__(self, params):
+        super(PredictionDataset, self).__init__(params)
+
+        # Load mean and std
+        self.mean = pickle.load(open(os.path.join(self.params['ckpt_dirpath'], 'mean.pkl'), 'r'))
+        self.std = pickle.load(open(os.path.join(self.params['ckpt_dirpath'], 'std.pkl'), 'r'))
 
     # Create pipeline, graph, train/valid/test splits for use by network
     def read_and_decode(self, input_queue):
@@ -332,6 +343,16 @@ class PredictionDataset(Dataset):
         self.num_batches = {'predict': int(len(files_list) / self.params['batch_size'])}
 
         return files_list
+
+
+    def preprocess_img(self, img):
+        img = super(PredictionDataset, self).preprocess_img(img)
+
+        # Standardize
+        img = tf.sub(img, tf.cast(tf.constant(self.mean), tf.float32))
+        img = tf.div(img, tf.cast(tf.constant(self.std), tf.float32))
+        return img
+
 
 def get_dataset(params):
     if params['mode'] == 'predict':
