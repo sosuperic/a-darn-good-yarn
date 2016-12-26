@@ -79,7 +79,7 @@ class Dataset(object):
         """Basic preprocessing of image - resize to architecture's expected inputsize """
         img_crop_w, img_crop_h = self.params['img_crop_w'], self.params['img_crop_h']
         img = tf.image.resize_image_with_crop_or_pad(img, img_crop_h, img_crop_w)
-        img = tf.cast(img, tf.float32)
+        img = tf.image.convert_image_dtype(img, tf.float32)
         return img
 
     def input_pipeline(self, files_list, num_read_threads=5):

@@ -19,26 +19,33 @@ class BasicVizsentCNN(object):
             shape=[self.batch_size, self.img_h, self.img_w, 3], name='img_batch')
 
         # Rest of graph
-        with tf.variable_scope('convpool1'):
+        with tf.variable_scope('convrelupool1'):
             self.conv1 = self.conv(self.img_batch, [11, 11, 3, 96], [96], [1, 4, 4, 1])
-            self.pool1 =  tf.nn.max_pool(self.conv1, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
-            # print self.pool1.get_shape()
+            self.relu1 = tf.nn.relu(self.conv1)
+            self.pool1 =  tf.nn.max_pool(self.relu1, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
             # TODO: Normalization?
 
-        with tf.variable_scope('convpool2'):
+        with tf.variable_scope('convrelupool2'):
             self.conv2 = self.conv(self.pool1, [5, 5, 96, 256], [256], [1, 2, 2, 1])
-            self.pool2 =  tf.nn.max_pool(self.conv2, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
+            self.relu2 = tf.nn.relu(self.conv2)
+            self.pool2 =  tf.nn.max_pool(self.relu2, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
             # TODO: Normalization?
 
         with tf.variable_scope('fc') as scope:
+            self.dropout_rate = tf.constant(0.5)
             self.reshaped = tf.reshape(self.pool2, [self.batch_size, -1])     # (B,  _)
             self.fc1 = self.fc(self.reshaped, 512, '1')         # (B, 512)
-            self.fc2 = self.fc(self.fc1, 512, '2')              # (B, 512)
-            self.fc3 = self.fc(self.fc2, 24, '3')               # (B, 24)
-            self.fc4 = self.fc(self.fc3, self.output_dim, '4')  # (B, output_dim)
+            self.relu1 = tf.nn.relu(self.fc1)
+            self.dropout1 = tf.nn.dropout(self.relu1, self.dropout_rate)
+            self.fc2 = self.fc(self.dropout1, 512, '2')              # (B, 512)
+            self.relu2 = tf.nn.relu(self.fc2)
+            self.dropout2 = tf.nn.dropout(self.relu2, self.dropout_rate)
+            self.fc3 = self.fc(self.dropout2, 24, '3')               # (B, 24)
+            self.relu3 = tf.nn.relu(self.fc3)
+            self.dropout3 = tf.nn.dropout(self.relu3, self.dropout_rate)
+            self.fc4 = self.fc(self.dropout3, self.output_dim, '4')  # (B, output_dim)
 
-        self.last_fc = self.fc4                                 # for regression
-        self.probs = tf.nn.softmax(self.fc4)                    # for classification
+        self.last_fc = self.fc4
 
     def conv(self, x, kernel_shape, bias_shape, strides):
         weights = tf.get_variable('weights', kernel_shape, initializer=tf.random_normal_initializer())
@@ -75,7 +82,7 @@ class BasicVizsentCNN(object):
         w = tf.get_variable(w_name, [input_dim, output_dim], tf.float32, tf.contrib.layers.xavier_initializer())
         b = tf.get_variable(b_name, [output_dim], tf.float32, tf.constant_initializer(0.0))
 
-        output = tf.nn.relu(tf.matmul(x, w) + b)
+        output = tf.matmul(x, w) + b
         if squeeze:
             output = tf.squeeze(output)
 

@@ -57,8 +57,10 @@ class Network(object):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_tr_batches = self.dataset.get_num_batches('train')
                 for j in range(num_tr_batches):
-                    _, loss_val, acc_val, summary = sess.run([train_step, self.loss, self.acc, summary_op])
+                    _, last_fc, loss_val, acc_val, summary = sess.run([train_step, model.last_fc, self.loss, self.acc, summary_op])
                                                              # feed_dict={'class_weights:0': label2count})
+
+                    print last_fc
 
                     self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
                     self.logger.info('................... -- Acc: {}'.format(acc_val))
@@ -67,8 +69,8 @@ class Network(object):
                     if j % 10 == 0:
                         tr_summary_writer.add_summary(summary, i * num_tr_batches + j)
 
-                    if j == 10:
-                        break
+                    # if j == 10:
+                    #     break
 
                 # Evaluate on validation set (potentially)
                 if (i+1) % self.params['val_every_epoch'] == 0:
@@ -254,11 +256,11 @@ class Network(object):
             self.loss = tf.sqrt(tf.reduce_mean(tf.square(tf.sub(model.last_fc, label_batch_op))))
         else:
             labels_onehot = tf.one_hot(label_batch_op, self.output_dim)     # (batch_size, num_classes)
-            weighted_logits = tf.mul(model.probs, class_weights)            # (batch_size, num_classes)
+            weighted_logits = tf.mul(model.last_fc, class_weights)            # (batch_size, num_classes)
             self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(weighted_logits, labels_onehot))
 
             # Accuracy
-            acc = tf.equal(tf.cast(tf.argmax(model.probs, 1), tf.int32), label_batch_op)
+            acc = tf.equal(tf.cast(tf.argmax(model.last_fc, 1), tf.int32), label_batch_op)
             self.acc = tf.reduce_mean(tf.cast(acc, tf.float32))
 
     def _get_summary_ops(self):
