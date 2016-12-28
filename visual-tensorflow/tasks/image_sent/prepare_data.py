@@ -217,29 +217,23 @@ def write_sentibank_to_tfrecords(split=[0.8, 0.1, 0.1]):
                     continue
                 img = np.array(img)
 
-                # print 'a'
+                id = os.path.basename(img_fp).split('.')[0]
                 h, w = img.shape[0], img.shape[1]
-                # print 'b'
                 img_raw = img.tostring()
-                # print 'c'
                 # Can't use None as a feature, so just pass in a dummmy value. It'll be skipped anyway
                 sent_reg_label = get_label(bc, 'sent_reg', bc_lookup=bc2sent)
                 sent_reg_label = sent_reg_label if sent_reg_label else 0.0
-                # print 'd', sent_reg_label
                 sent_biclass_label = get_label(bc, 'sent_biclass', bc_lookup=bc2sent, sent_neutral_absval=sent_neutral_absval)
                 sent_biclass_label = sent_biclass_label if sent_biclass_label else 0
-                # print 'e', sent_biclass_label
                 sent_triclass_label = get_label(bc, 'sent_triclass', bc_lookup=bc2sent, sent_neutral_absval=sent_neutral_absval)
                 sent_triclass_label = sent_triclass_label if sent_triclass_label else 0
-                # print 'f', sent_triclass_label
                 emo_label = get_label(bc, 'emo', bc_lookup=bc2emo)
                 emo_label = emo_label if emo_label else 0
-                # print 'g', emo_label
                 bc_label = get_label(bc, 'bc', bc_lookup=bc2idx)
                 bc_label = bc_label if bc_label else 0
-                # print 'h', bc_label
 
                 example = tf.train.Example(features=tf.train.Features(feature={
+                    'id': _bytes_feature(id),
                     'h': _int64_feature(h),
                     'w': _int64_feature(w),
                     'img': _bytes_feature(img_raw),
@@ -249,9 +243,6 @@ def write_sentibank_to_tfrecords(split=[0.8, 0.1, 0.1]):
                     'emo': _int64_feature(emo_label),
                     'bc': _int64_feature(bc_label)}))
 
-
-                # print 'i'
-
                 # Figure out which writer to use (train, valid, test)
                 if i < train_endidx:
                     writer = tr_writer
@@ -260,18 +251,10 @@ def write_sentibank_to_tfrecords(split=[0.8, 0.1, 0.1]):
                 else:
                     writer = te_writer
 
-                # print 'j'
-
                 writer.write(example.SerializeToString())
-
-                # print '@@@@k@@@@'
 
             except Exception as e:
                 print img_fp, e
-                # import sys
-                # sys.exit()
-
-        # break
 
     tr_writer.close()
     va_writer.close()
@@ -487,7 +470,7 @@ def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256,
                 i += 1
                 continue
             else:
-                if i < 2578450:
+                if i < 2743000:
                     i += 1
                     continue
                 bc, url = line.strip().split(',')
