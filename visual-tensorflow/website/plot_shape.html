@@ -9,24 +9,35 @@
 </head>
 
 <body>
+  <div id="plot"></div>
   <script type="text/javascript" src="static/js/dat.gui.js"></script>
   <script type="text/javascript">
       
   var FizzyText = function() {
     this.message = 'dat.gui';
-    this.speed = 0.8;
-    this.displayOutline = false;
-    // this.explode = function() { ... };
-    // Define render logic ...
+    this.windowSize = 48;
+
+    var _this = this;
+
+    var render = function() {
+      console.log(this.windowSize);
+      var fieldNameElement = document.getElementById("plot");
+      console.log(this);
+      fieldNameElement.innerHTML = "Water" + _this.windowSize;
+    }
+
+    var loop = function() {
+      requestAnimationFrame(loop);
+      render();
+    }
+
+    loop();
   };
 
   window.onload = function() {
     var text = new FizzyText();
     var gui = new dat.GUI();
-    gui.add(text, 'message');
-    gui.add(text, 'speed', -5, 5);
-    gui.add(text, 'displayOutline');
-    // gui.add(text, 'explode');
+    gui.add(text, 'windowSize').min(1).max(100).step(1);
   };
   </script>
 </body>
