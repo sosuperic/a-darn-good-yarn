@@ -1,6 +1,13 @@
 # Visual emotion analysis
 Includes analysis of positive-negative sentiment and emotions on images and videos.
 
+## website
+- Used to plot shape and adjust window size, see frames at various points of curve
+- symlink website/shape/static/videos -> <videos path>
+- Run by :
+    * `PYTHONPATH=. python website/run.py`
+    * visit: `http://localhost:7898/shape`
+
 ## symlinks
 - List of symlinks set up
     * Each dataset in `data/`

@@ -1,0 +1,64 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+
+  <title>Plot Shape</title>
+  <!-- <link rel="stylesheet" href="css/styles.css?v=1.0"> -->
+</head>
+
+<body>
+  <div id="plot"></div>
+  <div id="frame"></div>
+  <script type="text/javascript" src="../static/js/dat.gui.js"></script>
+  <script type="text/javascript">
+    var data = {{ data|safe }};     // load data from Flask using Jinja 
+    console.log(data);
+      
+    var FizzyText = function() {
+      this.message = 'dat.gui';
+      this.windowSize = 48;
+      this.frameIdx = 0;
+
+      var _this = this;
+
+      function render() {
+        var fieldNameElement = document.getElementById("plot");
+        fieldNameElement.innerHTML = "Water" + _this.windowSize;
+
+        show_image("../static/videos/" + data.frames[_this.frameIdx], 256, 256, '');
+      }
+
+      function loop() {
+        requestAnimationFrame(loop);
+        render();
+      }
+
+      function show_image(src, width, height, alt) {
+          // This next line will just add it to the <body> tag
+          var frameElement = document.getElementById("frame");
+          if (frameElement.firstChild) {
+            frameElement.firstChild.src = src;
+          } else {
+            var img = document.createElement("img");
+            img.src = src;
+            img.width = width;
+            img.height = height;
+            img.alt = alt;
+            frameElement.appendChild(img);
+          }
+      }
+
+      loop();
+    };
+
+    window.onload = function() {
+      var text = new FizzyText();
+      var gui = new dat.GUI();
+      gui.add(text, 'windowSize').min(1).max(100).step(1);
+      gui.add(text, 'frameIdx').min(0).max(100).step(1);
+    };
+  </script>
+</body>
+</html>
