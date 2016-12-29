@@ -4,8 +4,9 @@
 <head>
     <meta charset="utf-8">
     <title>Plot Shape</title>
+    <script src="../static/jslibs/dat.gui.js"></script>
     <script src="/static/jslibs/jquery.min.js"></script>
-    <script src="https://d3js.org/d3.v4.min.js"></script>
+    <script src="../static/jslibs/Chart.bundle.js"></script>
     <!-- <link rel="stylesheet" href="css/styles.css?v=1.0"> -->
 </head>
 
@@ -15,8 +16,6 @@
         <canvas id="chart" width="800" height="400"></canvas>
     </div>
     <div style="padding-left:222px;padding-top:50px" id="frame"></div>
-    <script type="text/javascript" src="../static/js/dat.gui.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.4.0/Chart.bundle.js"></script>
     <script type="text/javascript">
         var data = {{ data|safe }};     // load data from Flask using Jinja
         console.log(data);
