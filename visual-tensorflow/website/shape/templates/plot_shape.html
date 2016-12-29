@@ -19,137 +19,133 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.4.0/Chart.bundle.js"></script>
     <script type="text/javascript">
         var data = {{ data|safe }};     // load data from Flask using Jinja
+        console.log(data);
       
-        var FizzyText = function() {
+        var DatGui = function() {
             this.message = 'dat.gui';
             this.windowSize = 48;
-            var _this = this;
-
-            function render() {
-                var fieldNameElement = document.getElementById("plot");
-                fieldNameElement.innerHTML = "Water" + _this.windowSize;
-
-                // Get preds
-                // $.ajax({
-                //   url: '/api/pred/' + _this.windowSize,
-                //   type: 'GET',
-                //   success: function(data) {
-                //     // console.log(data);
-                //   },
-                //   error: function(xhr, status, err) {
-                //     // console.log(err);
-                //   }
-                // });
-            }
-
-            function loop() {
-                requestAnimationFrame(loop);
-                render();
-            }
-
-            loop();
+            this.video = data.titles[0];
+            this.dynamicRange = true;
         };
 
         window.onload = function() {
-            var text = new FizzyText();
+            var datgui = new DatGui();
             var gui = new dat.GUI();
-            gui.add(text, 'windowSize').min(1).max(100).step(1);
+            guiW = gui.add(datgui, 'windowSize').min(1).max(500).step(1);
+            guiV = gui.add(datgui, 'video', data.titles);
+            guiR = gui.add(datgui, 'dynamicRange');
+
+            guiW.onFinishChange(function(windowSize) { getUpdatedPreds(); });
+            guiV.onFinishChange(function(title) { getUpdatedPreds(); });
+            guiR.onFinishChange(function() { drawChart(datgui); });
+
+            show_image("../static/videos/" + data.title2framepaths[datgui.video][0], 256, 256, '');
+            drawChart(datgui);
+
+            function getUpdatedPreds() {
+                $.ajax({
+                    url: '/api/pred/' + datgui.video + '/' + datgui.windowSize,
+                    type: 'GET',
+                    success: function(preds) {
+                        data.preds = preds;
+                        drawChart(datgui);
+                    },
+                    error: function(xhr, status, err) {
+                        console.log(err);
+                    }
+                })
+                drawChart(datgui);
+            }
         };
+
+        
     </script>
 
     <script>
-        var data2smoothed = [];
-        for (var i =0; i < data.smoothed.length; i++) {
-            data2smoothed.push(data.smoothed[i] * 0.5);
-        }
+        function drawChart(datgui) {
 
-        function formatSeconds(seconds) {
-              var date = new Date(null);
-              date.setSeconds(seconds); // specify value for SECONDS here
-              return date.toISOString().substr(11, 8);
-        }
-
-        // Each label is the timestamp hr:min:sec in the video
-        function getLabels(data) {
-            var numSec = data.length;
-            var labels = [];
-            for (var i = 0; i < numSec; i++) {
-              labels.push(formatSeconds(i));
+            // Each label is the timestamp hr:min:sec in the video
+            function getLabels(data) {
+                var numSec = data.length;
+                var labels = [];
+                for (var i = 0; i < numSec; i++) {
+                  labels.push(formatSeconds(i));
+                }
+                return labels;
             }
-            return labels;
+            function formatSeconds(seconds) {
+                var date = new Date(null);
+                date.setSeconds(seconds); // specify value for SECONDS here
+                return date.toISOString().substr(11, 8);
+            }
+
+            // Each object in dataset array corresponds to one line
+            // e.g. one line for each emotion
+            var dataset = [];
+            for (var key in data.preds) {
+                dataset.push({
+                    label: key,
+                    borderWidth: 0.1,
+                    data: data.preds[key]
+                })
+            }
+            // Use first set
+            var labels = getLabels(data.preds[Object.keys(data.preds)[0]]);     
+            var chartData = {
+                labels: labels,
+                datasets: dataset
+            };
+
+            // Options
+            var options = {
+                global: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                },
+                elements: {   // Don't show individual points on line graph
+                    point:{
+                        radius: 0
+                    }
+                },
+                tooltips: {     // tooltip for points on current mouse x-axis position
+                    mode: 'index',
+                    intersect: false
+                },
+                scales: {
+                    xAxes: [{
+                        ticks: {
+                          autoSkipPadding: 50
+                        }
+                    }],
+                    yAxes: datgui.dynamicRange ? [] : [{   // Y-axis from 0 to 1
+                        ticks: {
+                            min: 0.0,
+                            max: 1.0
+                        }
+                    }]
+                },
+                hover: {
+                    onHover: function (e) {
+                        if (e[0]) {
+                            var frameIdx = e[0]._index;
+                            show_image("../static/videos/" + data.title2framepaths[datgui.video][frameIdx], 256, 256, '');
+                        }
+                    },
+                    mode: 'index',
+                    intersect: false
+                },
+                animation: {
+                    duration: 0
+                }
+            };
+
+            var ctx = $("#chart");
+            var myLineChart = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: options,
+            });
         }
-
-        var labels = getLabels(data.smoothed);
-
-        var chartData = {
-            labels: labels,
-            datasets: [
-                {
-                    label: "My First dataset",
-                    // backgroundColor: [
-                    //     'rgba(255, 99, 132, 0.2)',
-                    //     'rgba(54, 162, 235, 0.2)',
-                    //     'rgba(255, 206, 86, 0.2)',
-                    //     'rgba(75, 192, 192, 0.2)',
-                    //     'rgba(153, 102, 255, 0.2)',
-                    //     'rgba(255, 159, 64, 0.2)'
-                    // ],
-                    // borderColor: [
-                    //     'rgba(255,99,132,1.0)',
-                    //     'rgba(54, 162, 235, 1.0)',
-                    //     'rgba(255, 206, 86, 1.0)',
-                    //     'rgba(75, 192, 192, 1.0)',
-                    //     'rgba(153, 102, 255, 1.0)',
-                    //     'rgba(255, 159, 64, 1.0)'
-                    // ],
-                    borderWidth: 0.1,
-                    data: data.smoothed,
-                },
-                {
-                    label: "Number two",
-                    borderWidth: 0.1,
-                    data: data2smoothed
-                }
-            ],
-        };
-
-        var options = {
-            global: {
-                responsive: true,
-                maintainAspectRatio: false
-            },
-            elements: {   // Don't show individual points on line graph
-                point:{
-                    radius: 0
-                }
-            },
-            tooltips: {     // tooltip for points on current mouse x-axis position
-                mode: 'index',
-                intersect: false
-            },
-            scales: {
-                xAxes: [{
-                    ticks: {
-                      autoSkipPadding: 50
-                    }
-                }],
-                // yAxes: [{   // Y-axis from 0 to 1
-                //     ticks: {
-                //         min: 0.0,
-                //         max: 1.0
-                //     }
-                // }],
-            },
-            hover: {
-                onHover: function (e) {
-                    if (e[0]) {
-                        show_image("../static/videos/" + data.frames[e[0]._index], 256, 256, '');
-                    }
-                },
-                mode: 'index',
-                intersect: false
-            },
-        };
 
         function show_image(src, width, height, alt) {
             var frameElement = document.getElementById("frame");
@@ -164,14 +160,6 @@
                 frameElement.appendChild(img);
             }
         }
-        show_image("../static/videos/" + data.frames[0], 256, 256, '');
-
-        var ctx = $("#chart");
-        var myLineChart = new Chart(ctx, {
-            type: 'line',
-            data: chartData,
-            options: options,
-        });
     </script>
 </body>
 </html>
