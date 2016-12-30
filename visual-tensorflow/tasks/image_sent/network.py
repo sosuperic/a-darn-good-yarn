@@ -185,7 +185,7 @@ class Network(object):
         for dirpath in dirpaths:
             with tf.Session() as sess:
                 # Get data
-                self.logger.info('Getting images to predict')
+                self.logger.info('Getting images to predict for {}'.format(dirpath))
                 self.dataset = get_dataset(self.params, dirpath)
                 self.output_dim = self.dataset.get_output_dim()
                 img_batch = self.dataset.setup_graph()
