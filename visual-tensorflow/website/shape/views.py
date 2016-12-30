@@ -22,8 +22,10 @@ from natsort import natsorted
 VIDEOS_PATH = 'data/videos/'
 
 title2vidpath = {}
+title2framepaths = {}
 cur_pd_df = None
 cur_title = None
+cur_vid_framepaths = None
 
 #################################################################################################
 # NON-ROUTING FUNCTIONS 
@@ -75,35 +77,35 @@ def get_initial_data():
     Return initial data to pass to template. 
     Also set global variables cur_pd_df and cur_title
     """
+    global title2vidpath, title2framepaths, cur_title, cur_pd_df, cur_vid_framepaths
+
     vidpaths = get_all_vidpaths_with_preds()
     titles = []
-    global title2vidpath
     for vp in vidpaths:
         t = os.path.basename(vp)
         titles.append(t)
         title2vidpath[t] = vp
-    print title2vidpath
+    cur_title = titles[0]
 
     # Get paths every frame for every video
-    title2framepaths = {}
     for i, t in enumerate(titles):
         vp = vidpaths[i]
         title2framepaths[t] = natsorted([os.path.join(vp, 'frames', f) for f in os.listdir(os.path.join(vp, 'frames')) \
         if not f.startswith('.')])
 
     # Get initial preds (first video to show)
-    global cur_pd_df
     cur_pd_df = pd.read_csv(os.path.join(vidpaths[0], 'preds', 'sent_biclass.csv'))
-    preds = get_preds_from_df(cur_pd_df, window_len=48)
+    cur_vid_preds = get_preds_from_df(cur_pd_df, window_len=48)
     
     # Now turn full paths to relative paths because js has relative path starting from videos/
     vidpaths = [vp.lstrip(VIDEOS_PATH) for vp in vidpaths]
     title2framepaths = {t: [fp.lstrip(VIDEOS_PATH) for fp in vid] for t, vid in title2framepaths.items()}
+    cur_vid_framepaths = title2framepaths[cur_title]
 
-    global cur_title
-    cur_title = titles[0]
-
-    data = {'titles': titles, 'title2framepaths': title2framepaths, 'preds': preds}
+    # titles to create dropdown in dat.gui
+    # framepaths to display image for current video
+    # preds to create graph for current video
+    data = {'titles': titles, 'framepaths': cur_vid_framepaths, 'preds': cur_vid_preds}
     return data
 
 #################################################################################################
@@ -116,18 +118,20 @@ def shape():
     return render_template('plot_shape.html', data=json.dumps(data))
 
 @app.route('/api/pred/<title>/<window_len>', methods=['GET'])
-def get_preds(title, window_len):
+def get_preds_and_frames(title, window_len):
     """Return predictions for a given movie with window_len, update global vars"""
-    global cur_pd_df, cur_title, title2vidpath
+    global title2vidpath, title2framepaths, cur_pd_df, cur_title, cur_vid_framepaths
     if title != cur_title:
         cur_title = title
         vidpath = title2vidpath[title]
         cur_pd_df = pd.read_csv(os.path.join(vidpath, 'preds', 'sent_biclass.csv'))
+        cur_vid_framepaths = title2framepaths[title]
 
     preds = get_preds_from_df(cur_pd_df, window_len=int(window_len))
+    data = {'preds': preds, 'framepaths': cur_vid_framepaths}
 
     return Response(
-        json.dumps(preds),
+        json.dumps(data),
         mimetype='application/json',
         headers={
             'Cache-Control': 'no-cache',

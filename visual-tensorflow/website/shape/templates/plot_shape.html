@@ -17,9 +17,12 @@
     </div>
     <div style="padding-left:222px;padding-top:50px" id="frame"></div>
     <script type="text/javascript">
+        // Global variables 
         var data = {{ data|safe }};     // load data from Flask using Jinja
+        var myLineChart;
         console.log(data);
       
+        // Set up dat.gui
         var DatGui = function() {
             this.message = 'dat.gui';
             this.windowSize = 48;
@@ -38,21 +41,29 @@
             guiV.onFinishChange(function(title) { getUpdatedPreds(); });
             guiR.onFinishChange(function() { drawChart(datgui); });
 
-            show_image("../static/videos/" + data.title2framepaths[datgui.video][0], 256, 256, '');
+            show_image("../static/videos/" + data.framepaths[0], 256, 256, '');
             drawChart(datgui);
 
             function getUpdatedPreds() {
                 $.ajax({
                     url: '/api/pred/' + datgui.video + '/' + datgui.windowSize,
                     type: 'GET',
-                    success: function(preds) {
-                        data.preds = preds;
-                        drawChart(datgui);
+                    success: function(resp) {
+                        reset_and_redraw(resp, redraw_callback);
                     },
                     error: function(xhr, status, err) {
                         console.log(err);
                     }
                 })
+            }
+
+            function reset_and_redraw(resp, redraw_callback) {
+                data.preds = resp.preds;
+                data.framepaths = resp.framepaths;
+                redraw_callback();
+            }
+            function redraw_callback() {
+                show_image("/static/videos/" + data.framepaths[0], 256, 256, '');
                 drawChart(datgui);
             }
         };
@@ -62,7 +73,6 @@
 
     <script>
         function drawChart(datgui) {
-
             // Each label is the timestamp hr:min:sec in the video
             function getLabels(data) {
                 var numSec = data.length;
@@ -127,7 +137,7 @@
                     onHover: function (e) {
                         if (e[0]) {
                             var frameIdx = e[0]._index;
-                            show_image("../static/videos/" + data.title2framepaths[datgui.video][frameIdx], 256, 256, '');
+                            show_image("../static/videos/" + data.framepaths[frameIdx], 256, 256, '');
                         }
                     },
                     mode: 'index',
@@ -139,7 +149,10 @@
             };
 
             var ctx = $("#chart");
-            var myLineChart = new Chart(ctx, {
+            if (myLineChart) {
+                myLineChart.destroy();
+            }
+            myLineChart = new Chart(ctx, {
                 type: 'line',
                 data: chartData,
                 options: options,
