@@ -165,7 +165,7 @@ class Network(object):
         """
         vidpaths = []
         for root, dirs, files in os.walk(starting_dir):
-            if ('frames' in os.listdir(root)) and ('preds' in os.listdir(root)):
+            if 'frames' in os.listdir(root):
                 vidpaths.append(root)
 
         return vidpaths
@@ -220,8 +220,10 @@ class Network(object):
                     for j in range(num_batches):
                         last_fc, probs = sess.run([model.last_fc, model.probs],
                                                   feed_dict={'img_batch:0': img_batch.eval()})
-                        print last_fc
-                        print probs
+
+                        if self.params['debug']:
+                            print last_fc
+                            print probs
                         for frame_prob in probs:
                             frame_prob = ','.join([str(v) for v in frame_prob])
                             f.write('{}\n'.format(frame_prob))
