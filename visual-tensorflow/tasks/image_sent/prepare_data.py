@@ -461,8 +461,33 @@ def get_MVSO_bc2emotion2value():
 
 def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256, target_h=256):
     """Download, resize, and center crop images"""
-    import time
-    mr = MovieReader()          # used to resize and center crop
+    import socket
+    socket.setdefaulttimeout(30)
+
+    mr = MovieReader()                  # used to resize and center crop
+
+    def retrieve_img_and_process(url_and_fp):
+        url, fp = url_and_fp[0], url_and_fp[1]
+        urllib.urlretrieve(url, fp)
+
+        # Reopen image to resize and central crop
+        try:
+            im = Image.open(fp)
+            if im.mode != 'RGB':        # type L, P, etc. shows some type of Flickr unavailable photo img
+                os.remove(fp)
+                # continue
+            im = np.array(im)
+            im =  mr.resize_and_center_crop(im, target_w, target_h)
+            Image.fromarray(im).save(fp)
+        except Exception as e:
+            # print url
+            # print e
+            pass
+
+    # import time
+
+    urls = []
+    fps = []
     with open(os.path.join(MVSO_PATH, 'image_url_mappings', 'english.csv'), 'r') as f:
         i = 0
         for line in f.readlines():
@@ -470,15 +495,15 @@ def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256,
                 i += 1
                 continue
             else:
-                if i < 2743000:
+                if i < 3121850:
                     i += 1
                     continue
                 bc, url = line.strip().split(',')
                 bc_dir = os.path.join(output_dir, bc)
 
-                if i % 50 == 0:
-                    time.sleep(0.1)
-                    print 'bi_concept: {}; num_imgs: {}'.format(bc, i)
+                # if i % 50 == 0:
+                    # time.sleep(0.1)
+                    # print 'bi_concept: {}; num_imgs: {}'.format(bc, i)
                 i += 1
 
                 # Make bi_concept directory if it doesn't exist
@@ -493,19 +518,19 @@ def download_MVSO_imgs(output_dir=os.path.join(MVSO_PATH, 'imgs'), target_w=256,
                 if os.path.exists(fp):
                     continue
 
-                urllib.urlretrieve(url, fp)
+                # Old sequential way:
+                # retrieve_img_and_process([url, fp])
 
-                # Reopen image to resize and central crop
-                try:
-                    im = Image.open(fp)
-                    if im.mode != 'RGB':      # type L, P, etc. shows some type of Flickr unavailable photo img
-                        os.remove(fp)
-                        continue
-                    im = np.array(im)
-                    im =  mr.resize_and_center_crop(im, target_w, target_h)
-                    Image.fromarray(im).save(fp)
-                except Exception as e:
-                    print e
+                urls.append(url)
+                fps.append(fp)
+    print 'done getting urls'
+
+    from multiprocessing.dummy import Pool as ThreadPool
+    pool = ThreadPool(100)
+    urls_and_fps = zip(urls, fps)
+    for i in range(0, len(urls), 1000):
+        print i
+        results = pool.map(retrieve_img_and_process, urls_and_fps[i:i+1000])
 
 ########################################################################################################################
 # Videos
