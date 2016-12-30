@@ -41,9 +41,9 @@ if __name__ == '__main__':
     parser.add_argument('-optim', dest='optim', default=None, help='optimziation method')
 
     # Testing options - not found in yaml
-    parser.add_argument('-vd', '--video_dir', dest='video_dir', help='directory that contains video and frames/ folder')
-    parser.add_argument('-cb', dest='color_blocks', action='store_true', default=False,
-                        help='predict on solid color blocks')
+    parser.add_argument('-vd', '--vid_dirpath', dest='vid_dirpath',
+                        help='either (a) path to directory that contains video and frames/ folder, or '\
+                             '(b) directory that contains subdirs that have video and frames/ ')
     parser.add_argument('-att', dest='attention', action='store_true', default=False,
                         help='produce output imgs? of where attention is focused')
     parser.add_argument('-dd', dest='deepdream', action='store_true', default=False,
@@ -97,5 +97,7 @@ if __name__ == '__main__':
         params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
         network = Network(params)
         network.predict()
+
+
 
 

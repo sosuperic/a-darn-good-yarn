@@ -298,8 +298,10 @@ class SentibankDataset(Dataset):
 ###
 ########################################################################################################################
 class PredictionDataset(Dataset):
-    def __init__(self, params):
+    def __init__(self, params, vid_dirpath):
         super(PredictionDataset, self).__init__(params)
+
+        self.vid_dirpath = vid_dirpath
 
         # Load mean and std
         self.mean = pickle.load(open(os.path.join(self.params['ckpt_dirpath'], 'mean.pkl'), 'r'))
@@ -337,13 +339,12 @@ class PredictionDataset(Dataset):
     # Get files
     def get_files_list(self):
         """Return list of images to predict"""
-        files_list = natsorted([f for f in os.listdir(os.path.join(self.params['video_dir'], 'frames')) if f.endswith('jpg')])
-        files_list = [os.path.join(self.params['video_dir'], 'frames', f) for f in files_list]
+        files_list = natsorted([f for f in os.listdir(os.path.join(self.vid_dirpath, 'frames')) if f.endswith('jpg')])
+        files_list = [os.path.join(self.vid_dirpath, 'frames', f) for f in files_list]
         self.num_pts = {'predict': len(files_list)}
         self.num_batches = {'predict': int(len(files_list) / self.params['batch_size'])}
 
         return files_list
-
 
     def preprocess_img(self, img):
         img = super(PredictionDataset, self).preprocess_img(img)
@@ -354,8 +355,8 @@ class PredictionDataset(Dataset):
         return img
 
 
-def get_dataset(params):
+def get_dataset(params, vid_dirpath=None):
     if params['mode'] == 'predict':
-        return PredictionDataset(params)
+        return PredictionDataset(params, vid_dirpath)
     elif params['dataset'] == 'Sentibank':
         return SentibankDataset(params)

@@ -14,13 +14,13 @@ from core.utils.utils import get_optimizer, load_model, save_model, setup_loggin
 class Network(object):
     def __init__(self, params):
         self.params = params
-        self.dataset = get_dataset(params)
 
     ####################################################################################################################
     # Train
     ####################################################################################################################
     def train(self):
         """Train"""
+        self.dataset = get_dataset(self.params)
         self.logger = self._get_logger()
         self.output_dim = self.dataset.get_output_dim()
         with tf.Session() as sess:
@@ -107,6 +107,7 @@ class Network(object):
     ####################################################################################################################
     def test(self):
         """Test"""
+        self.dataset = get_dataset(self.params)
         self.logger = self._get_logger()
         self.output_dim = self.dataset.get_output_dim()
         with tf.Session() as sess:
@@ -156,51 +157,80 @@ class Network(object):
     ####################################################################################################################
     # Predict
     ####################################################################################################################
+
+    def get_all_vidpaths_with_preds(self, starting_dir):
+        """
+        Return list of full paths to every video directory that contains predictions
+        e.g. [<VIDEOS_PATH>/@Animated/@OldDisney/Feast/, ...]
+        """
+        vidpaths = []
+        for root, dirs, files in os.walk(starting_dir):
+            if ('frames' in os.listdir(root)) and ('preds' in os.listdir(root)):
+                vidpaths.append(root)
+
+        return vidpaths
+
     def predict(self):
-        """Test"""
+        """Predict"""
         self.logger = self._get_logger()
-        self.output_dim = self.dataset.get_output_dim()
-        with tf.Session() as sess:
-            # Get data
-            self.logger.info('Getting images to predict')
-            img_batch = self.dataset.setup_graph()
 
-            # Get model
-            self.logger.info('Building graph')
-            model = self._get_model(sess, img_batch)
+        # If given path contains frames/, just predict for that one video
+        # Else walk through directory and predict for every folder that contains frames/
+        dirpaths = None
+        if os.path.exists(os.path.join(self.params['vid_dirpath'], 'frames')):
+            dirpaths = [self.params['vid_dirpath']]
+        else:
+            dirpaths = self.get_all_vidpaths_with_preds(self.params['vid_dirpath'])
 
-            # Initialize
-            coord, threads = self._initialize(sess)
+        for dirpath in dirpaths:
+            with tf.Session() as sess:
+                # Get data
+                self.logger.info('Getting images to predict')
+                self.dataset = get_dataset(self.params, dirpath)
+                self.output_dim = self.dataset.get_output_dim()
+                img_batch = self.dataset.setup_graph()
 
-            # Restore model now that graph is complete -- loads weights to variables in existing graph
-            self.logger.info('Restoring checkpoint')
-            saver = load_model(sess, self.params)
+                # Get model
+                self.logger.info('Building graph')
+                model = self._get_model(sess, img_batch)
 
-            # Make directory to store predictions
-            preds_dir = os.path.join(self.params['video_dir'], 'preds')
-            if not os.path.exists(preds_dir):
-                os.mkdir(preds_dir)
+                # Initialize
+                coord, threads = self._initialize(sess)
 
-            # Predict
-            idx2label = self.get_idx2label()
-            num_batches = self.dataset.get_num_batches('predict')
-            if self.params['load_epoch'] is not None:
-                fn = '{}_{}.csv'.format(self.params['obj'], self.params['load_epoch'])
-            else:
-                fn = '{}.csv'.format(self.params['obj'])
-            with open(os.path.join(preds_dir, fn), 'w') as f:
-                labels = [idx2label[i] for i in range(self.output_dim)]
-                f.write('{}\n'.format(','.join(labels)))
-                for j in range(num_batches):
-                    last_fc, probs = sess.run([model.last_fc, model.probs])
-                    print last_fc
-                    print probs
-                    for frame_prob in probs:
-                        frame_prob = ','.join([str(v) for v in frame_prob])
-                        f.write('{}\n'.format(frame_prob))
+                # Restore model now that graph is complete -- loads weights to variables in existing graph
+                self.logger.info('Restoring checkpoint')
+                saver = load_model(sess, self.params)
 
-            coord.request_stop()
-            coord.join(threads)
+                # Make directory to store predictions
+                preds_dir = os.path.join(dirpath, 'preds')
+                if not os.path.exists(preds_dir):
+                    os.mkdir(preds_dir)
+
+                # Predict, write to file
+                idx2label = self.get_idx2label()
+                num_batches = self.dataset.get_num_batches('predict')
+                if self.params['load_epoch'] is not None:
+                    fn = '{}_{}.csv'.format(self.params['obj'], self.params['load_epoch'])
+                else:
+                    fn = '{}.csv'.format(self.params['obj'])
+
+                with open(os.path.join(preds_dir, fn), 'w') as f:
+                    labels = [idx2label[i] for i in range(self.output_dim)]
+                    f.write('{}\n'.format(','.join(labels)))
+                    for j in range(num_batches):
+                        last_fc, probs = sess.run([model.last_fc, model.probs],
+                                                  feed_dict={'img_batch:0': img_batch.eval()})
+                        print last_fc
+                        print probs
+                        for frame_prob in probs:
+                            frame_prob = ','.join([str(v) for v in frame_prob])
+                            f.write('{}\n'.format(frame_prob))
+
+                coord.request_stop()
+                coord.join(threads)
+
+            # Clear previous video's graph
+            tf.reset_default_graph()
 
     ####################################################################################################################
     # Helper functions
