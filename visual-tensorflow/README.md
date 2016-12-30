@@ -4,8 +4,9 @@ Includes analysis of positive-negative sentiment and emotions on images and vide
 ## website
 - Used to plot shape and adjust window size, see frames at various points of curve
 - symlink website/shape/static/videos -> <videos path>
-- Run by :
-    * `PYTHONPATH=. python website/run.py`
+- Run in website/ by:
+    * `python run.py` (local)
+    * `gunicorn -w 10 -b 0.0.0.0:7898 run:app` (on Shannon)
     * visit: `http://localhost:7898/shape`
 
 ## symlinks
