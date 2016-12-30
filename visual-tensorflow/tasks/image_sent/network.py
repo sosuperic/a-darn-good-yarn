@@ -158,9 +158,9 @@ class Network(object):
     # Predict
     ####################################################################################################################
 
-    def get_all_vidpaths_with_preds(self, starting_dir):
+    def get_all_vidpaths_with_frames(self, starting_dir):
         """
-        Return list of full paths to every video directory that contains predictions
+        Return list of full paths to every video directory that contains frames/
         e.g. [<VIDEOS_PATH>/@Animated/@OldDisney/Feast/, ...]
         """
         vidpaths = []
@@ -180,7 +180,7 @@ class Network(object):
         if os.path.exists(os.path.join(self.params['vid_dirpath'], 'frames')):
             dirpaths = [self.params['vid_dirpath']]
         else:
-            dirpaths = self.get_all_vidpaths_with_preds(self.params['vid_dirpath'])
+            dirpaths = self.get_all_vidpaths_with_frames(self.params['vid_dirpath'])
 
         for dirpath in dirpaths:
             with tf.Session() as sess:
