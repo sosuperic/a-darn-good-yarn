@@ -12,3 +12,9 @@ vizsent/soumith/models
 
 *logs/
 *checkpoints/
+
+*data/
+!*data/README.md
+
+visual-tensorflow/website/shape/core
+visual-tensorflow/website/shape/static/videos

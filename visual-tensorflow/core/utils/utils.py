@@ -5,6 +5,7 @@ import logging.config
 import os
 from time import gmtime, strftime
 import tensorflow as tf
+from tensorflow.python.framework import graph_util
 import yaml
 
 ########################################################################################################################
@@ -190,3 +191,71 @@ def load_model(sess, params):
 def _get_ckpt_basename(params):
     """Use to save and load"""
     return params['arch'] + '-' + params['obj']
+
+def load_model_for_freeze_graph(sess, params):
+    """freeze_graph is a work in progress, so haven't fully refactored load_model yet"""
+    # First load graph
+    # .meta file defines graph - they should all be the same? So just take any one
+    # meta_file = [f for f in os.listdir(params['ckpt_dirpath']) if f.endswith('meta')][0]
+    # meta_filepath = os.path.join(params['ckpt_dirpath'], meta_file)
+    # saver = tf.train.import_meta_graph(meta_filepath)
+
+    # Load weights
+    saver = tf.train.Saver(tf.global_variables())
+    if params['load_epoch'] is not None:        # load the checkpoint for the given epoch
+        ckpt_name = _get_ckpt_basename(params) + '-' + str(params['load_epoch'])
+        ckpt_path = os.path.join(params['ckpt_dirpath'], ckpt_name)
+        # saver.restore(sess, os.path.join(params['ckpt_dirpath'], ckpt_name))
+    else:       # 'checkpoint' binary file keeps track of latest checkpoints. Use it to to get most recent
+        ckpt = tf.train.get_checkpoint_state(params['ckpt_dirpath'])
+        ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+        ckpt_path = os.path.join(params['ckpt_dirpath'], ckpt_name)
+    saver.restore(sess, ckpt_path)
+
+    return saver, ckpt_path
+
+def freeze_graph(ckpt_dirpath, arch, obj, load_epoch=None):
+    params = {'ckpt_dirpath': ckpt_dirpath, 'arch': arch, 'obj': obj, 'load_epoch': load_epoch}
+
+    # We retrieve our checkpoint fullpath
+    # checkpoint = tf.train.get_checkpoint_state(model_folder)
+    # input_checkpoint = checkpoint.model_checkpoint_path
+    #
+    # # We precise the file fullname of our freezed graph
+    # absolute_model_folder = "/".join(input_checkpoint.split('/')[:-1])
+    # output_graph = absolute_model_folder + "/frozen_model.pb"
+    #
+    # # Before exporting our graph, we need to precise what is our output node
+    # # This is how TF decides what part of the Graph he has to keep and what part it can dump
+    # # NOTE: this variables is plural, because you can have multiple output nodes
+    # output_node_names = "Accuracy/predictions"
+    #
+    # # We clear the devices, to allow TensorFlow to control on the loading where it wants operations to be calculated
+    # clear_devices = True
+    #
+    # # We import the meta graph and retrive a Saver
+    # saver = tf.train.import_meta_graph(input_checkpoint + '.meta', clear_devices=clear_devices)
+
+
+    output_graph = os.path.join(ckpt_dirpath, "frozen_model.pb")
+
+    # We retrieve the protobuf graph definition
+    graph = tf.get_default_graph()
+    input_graph_def = graph.as_graph_def()
+
+    # We start a session and restore the graph weights
+    with tf.Session() as sess:
+        saver, ckpt_path = load_model_for_freeze_graph(sess, params)
+        # saver.restore(sess, input_checkpoint)
+
+        # We use a built-in TF helper to export variables to constant
+        output_graph_def = graph_util.convert_variables_to_constants(
+            sess, # The session is used to retrieve the weights
+            input_graph_def, # The graph_def is used to retrieve the nodes
+            # output_node_names.split(",") # The output node names are used to select the usefull nodes
+        )
+
+        # Finally we serialize and dump the output graph to the filesystem
+        with tf.gfile.GFile(output_graph, "wb") as f:
+            f.write(output_graph_def.SerializeToString())
+        print("%d ops in the final graph." % len(output_graph_def.node))
