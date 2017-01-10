@@ -3,6 +3,7 @@
 import json
 import logging.config
 import os
+import random
 from time import gmtime, strftime
 import tensorflow as tf
 from tensorflow.python.framework import graph_util
@@ -259,3 +260,59 @@ def freeze_graph(ckpt_dirpath, arch, obj, load_epoch=None):
         with tf.gfile.GFile(output_graph, "wb") as f:
             f.write(output_graph_def.SerializeToString())
         print("%d ops in the final graph." % len(output_graph_def.node))
+
+########################################################################################################################
+# Other
+########################################################################################################################
+def scramble_img_recursively(img, min_block_size):
+    """Return recursively scrambled copy of nxn numpy array
+
+    min_block_size should be factor of n"""
+    if len(img) == min_block_size:
+        return img
+    else:
+        copy = img.copy()
+        # 4 lists - each list has 2 tuples: (y_start, y_end), (x_start, x_end)
+        pixelranges = [[(0,len(img)/2),(0,len(img)/2)],
+                             [(len(img)/2,len(img)),(0,len(img)/2)],
+                             [(0,len(img)/2), (len(img)/2,len(img))],
+                             [(len(img)/2, len(img)),(len(img)/2,len(img))]]
+
+        indices = range(4)
+        random.shuffle(indices)
+        for i in range(4):
+            idx = indices[i]
+            copy[pixelranges[i][0][0]:pixelranges[i][0][1],pixelranges[i][1][0]:pixelranges[i][1][1],:] = \
+                scramble_img_recursively(img[pixelranges[idx][0][0]:pixelranges[idx][0][1],pixelranges[idx][1][0]:pixelranges[idx][1][1],:],
+                                         min_block_size)
+        return copy
+
+def scramble_img(img, block_size):
+    """Return scrambled copy of nxn numpy array
+
+    block_size should be factor of n"""
+    copy = img.copy()
+
+    img_len = len(img)
+    if img_len  == block_size:
+        return copy
+
+    num_blocks_onedim = (img_len / block_size)
+    num_blocks =  num_blocks_onedim ** 2
+
+    pixelranges = []  # each sublist has 2 tuples: (y_start, y_end), (x_start, x_end)
+    for i in range(num_blocks):
+        y_idx = i % num_blocks_onedim
+        x_idx = i / num_blocks_onedim
+        y_pixelrange = (y_idx * block_size, (y_idx + 1) * block_size)
+        x_pixelrange = (x_idx * block_size, (x_idx + 1) * block_size)
+        pixelranges.append([y_pixelrange, x_pixelrange])
+
+    indices = range(num_blocks)
+    random.shuffle(indices)
+    for i in range(num_blocks):
+        idx = indices[i]
+        copy[pixelranges[i][0][0]:pixelranges[i][0][1],pixelranges[i][1][0]:pixelranges[i][1][1],:] = \
+            img[pixelranges[idx][0][0]:pixelranges[idx][0][1],pixelranges[idx][1][0]:pixelranges[idx][1][1]]
+
+    return copy

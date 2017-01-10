@@ -106,11 +106,11 @@ class SentibankDataset(Dataset):
     def setup_obj(self):
         super(SentibankDataset, self).setup_obj()
         if 'sent' in self.params['obj']:
-            self.bc_lookup = get_bc2sent()
+            self.bc_lookup = get_bc2sent(self.params['dataset'])
         elif self.params['obj'] == 'emo':
-            self.bc_lookup = get_bc2emo()
+            self.bc_lookup = get_bc2emo(self.params['dataset'])
         elif self.params['obj'] == 'bc':
-            self.bc_lookup = get_bc2idx()
+            self.bc_lookup = get_bc2idx(self.params['dataset'])
 
     ####################################################################################################################
     # Getting tfrecords list
@@ -185,7 +185,7 @@ class SentibankDataset(Dataset):
                 if abs(self.bc_lookup[bc]) < self.params['sent_neutral_absval']:
                     continue
             # Skip this category if label doesn't exist
-            label = get_label(bc, self.params['obj'],
+            label = get_label(self.params['dataset'], bc, self.params['obj'],
                               bc_lookup=self.bc_lookup,
                               sent_neutral_absval=self.params['sent_neutral_absval'])
             if label is None:
@@ -310,6 +310,7 @@ class SentibankDataset(Dataset):
         # Standardize
         img = tf.sub(img, tf.cast(tf.constant(self.mean), tf.float32))
         img = tf.div(img, tf.cast(tf.constant(self.std), tf.float32))
+
         return img
 
 ########################################################################################################################

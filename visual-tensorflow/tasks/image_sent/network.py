@@ -7,10 +7,11 @@ import pickle
 import tensorflow as tf
 
 from datasets import get_dataset
-from prepare_data import SENT_BICLASS_LABEL2INT, SENT_TRICLASS_LABEL2INT, EMO_LABEL2INT, get_bc2idx
+from prepare_data import SENT_BICLASS_LABEL2INT, SENT_TRICLASS_LABEL2INT, SENTIBANK_EMO_LABEL2INT, MVSO_EMO_LABEL2INT, \
+    get_bc2idx
 from core.basic_cnn import BasicVizsentCNN
 from core.vgg.vgg16 import vgg16
-from core.utils.utils import get_optimizer, load_model, save_model, setup_logging
+from core.utils.utils import get_optimizer, load_model, save_model, setup_logging, scramble_img, scramble_img_recursively
 
 class Network(object):
     def __init__(self, params):
@@ -150,17 +151,32 @@ class Network(object):
             # print sess.run(tf.trainable_variables()[0])
 
             # Test
+            overall_correct = 0
+            overall_num = 0
             for j in range(num_batches):
                 if self.params['save_preds_for_prog_finetune']:
                     probs, ids, loss_val, acc_val, summary = sess.run([model.probs, te_id_batch,
                                                                        self.loss, self.acc, summary_op])
                     for k in range(len(ids)):
                         id2pred[ids[k]] = probs[k]
+                elif self.params['scramble_img_mode']:
+                    fn = {'uniform': scramble_img, 'recursive': scramble_img_recursively}[self.params['scramble_img_mode']]
+                    img_batch, label_batch = sess.run([te_img_batch, self.te_label_batch])
+                    for k in range(len(img_batch)):
+                        img_batch[k] = fn(img_batch[k], self.params['scramble_blocksize'])
+                    loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op],
+                                                              feed_dict={'img_batch:0': img_batch,
+                                                                        'label_batch:0': label_batch})
                 else:
                     loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op])
 
+                overall_correct += int(acc_val * te_img_batch.get_shape().as_list()[0])
+                overall_num += te_img_batch.get_shape().as_list()[0]
+                overall_acc = float(overall_correct) / overall_num
+
                 self.logger.info('Test minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
                 self.logger.info('................... -- Acc: {}'.format(acc_val))
+                self.logger.info('Overall acc: {}'.format(overall_acc))
 
                 # Write summary
                 if j % 10 == 0:
@@ -359,9 +375,12 @@ class Network(object):
         elif self.params['obj'] == 'sent_triclass':
             label2idx = SENT_TRICLASS_LABEL2INT
         elif self.params['obj'] == 'emo':
-            label2idx = EMO_LABEL2INT
+            if self.params['dataset'] == 'Sentibank':
+                label2idx = SENTIBANK_EMO_LABEL2INT
+            elif self.params['dataset'] == 'MVSO':
+                label2idx = MVSO_EMO_LABEL2INT
         elif self.params['obj'] == 'bc':
-            label2idx = get_bc2idx()
+            label2idx = get_bc2idx(self.params['dataset'])
 
         idx2label = {v:k for k,v in label2idx.items()}
         return idx2label

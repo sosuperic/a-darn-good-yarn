@@ -52,11 +52,12 @@ if __name__ == '__main__':
     # Testing options - not found in yaml
     parser.add_argument('-vd', '--vid_dirpath', dest='vid_dirpath',
                         help='either (a) path to directory that contains video and frames/ folder, or '\
-                             '(b) directory that contains subdirs that have video and frames/ ')
-    # parser.add_argument('-att', dest='attention', action='store_true', default=False,
-    #                     help='produce output imgs? of where attention is focused')
-    # parser.add_argument('-dd', dest='deepdream', action='store_true', default=False,
-    #                     help='produce deep dream hallucinations of filters')
+                             '(b) directory that contains subdirs that have video and frames/ '\
+                             'used to with mode=predict')
+    parser.add_argument('--scramble_img_mode', dest='scramble_img_mode', default=None,
+                        help='uniform,recursive; used with mode=test')
+    parser.add_argument('--scramble_blocksize', dest='scramble_blocksize', default=None, type=int,
+                        help='multiple of 2 in range [2,128]')
 
     # Bookkeeping, checkpointing, etc.
     parser.add_argument('--save_every_epoch', dest='save_every_epoch', type=int, default=None,
@@ -89,7 +90,6 @@ if __name__ == '__main__':
         ckpt_dirpath = make_checkpoint_dir(checkpoints_dir, params)
         params['ckpt_dirpath'] = ckpt_dirpath
         print ckpt_dirpath
-
         network = Network(params)
         network.train()
 
