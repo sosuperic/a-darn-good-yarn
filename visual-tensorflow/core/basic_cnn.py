@@ -18,6 +18,7 @@ class BasicVizsentCNN(object):
         # Input
         self.img_batch = tf.placeholder_with_default(self.imgs,
             shape=[self.batch_size, self.img_h, self.img_w, 3], name='img_batch')
+            # shape=[None, self.img_h, self.img_w, 3], name='img_batch')
 
         # Rest of graph
         with tf.variable_scope('convrelupool1'):

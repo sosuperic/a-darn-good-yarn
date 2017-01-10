@@ -21,6 +21,15 @@ if __name__ == '__main__':
                         help='defines ranges [-val,val] for neutral. Images are ignored in this range for sent_biclass,\
                              while images in this range are used as neutral class for sent_triclass obj')
 
+    # Loading model for fine-tuning or testing
+    parser.add_argument('--finetune', dest='finetune', action='store_true', help='load model and finetune')
+    parser.add_argument('--prog_finetune', dest='prog_finetune', action='store_true',
+                        help='load model and progressively finetune using datapts that have high-confidence predictions')
+    parser.add_argument('--save_preds_for_prog_finetune', dest='save_preds_for_prog_finetune', action='store_true',
+                        help='save predictions to pkl file for progressively fine-tuning; used with mode=test')
+    parser.add_argument('--ckpt_dir', dest='ckpt_dir', default=None, help='directory to load checkpointed model')
+    parser.add_argument('--load_epoch', dest='load_epoch', default=None, help='checkpoint epoch to load')
+
     # Basic params for which job (architecture, classification goal) we're running
     # This corresponds to the training parameters set in config.yaml
     parser.add_argument('-a', '--arch', dest='arch', default='basic_cnn',
@@ -44,12 +53,10 @@ if __name__ == '__main__':
     parser.add_argument('-vd', '--vid_dirpath', dest='vid_dirpath',
                         help='either (a) path to directory that contains video and frames/ folder, or '\
                              '(b) directory that contains subdirs that have video and frames/ ')
-    parser.add_argument('-att', dest='attention', action='store_true', default=False,
-                        help='produce output imgs? of where attention is focused')
-    parser.add_argument('-dd', dest='deepdream', action='store_true', default=False,
-                        help='produce deep dream hallucinations of filters')
-    parser.add_argument('--ckpt_dir', dest='ckpt_dir', default=None, help='directory to load checkpointed model')
-    parser.add_argument('--load_epoch', dest='load_epoch', default=None, help='checkpoint epoch to load')
+    # parser.add_argument('-att', dest='attention', action='store_true', default=False,
+    #                     help='produce output imgs? of where attention is focused')
+    # parser.add_argument('-dd', dest='deepdream', action='store_true', default=False,
+    #                     help='produce deep dream hallucinations of filters')
 
     # Bookkeeping, checkpointing, etc.
     parser.add_argument('--save_every_epoch', dest='save_every_epoch', type=int, default=None,
@@ -79,9 +86,9 @@ if __name__ == '__main__':
     if params['mode'] == 'train':
         # Make checkpoint directory
         checkpoints_dir = os.path.join(__location__, 'checkpoints')
-        save_dir = make_checkpoint_dir(checkpoints_dir, params)
-        params['save_dir'] = save_dir
-        print save_dir
+        ckpt_dirpath = make_checkpoint_dir(checkpoints_dir, params)
+        params['ckpt_dirpath'] = ckpt_dirpath
+        print ckpt_dirpath
 
         network = Network(params)
         network.train()

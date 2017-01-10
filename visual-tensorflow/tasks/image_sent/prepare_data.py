@@ -111,7 +111,7 @@ def get_all_bc_img_fps():
 def get_bc2idx():
     """Return dictionary mapping biconcept to idx"""
     bc2idx = {}
-    for i, bc in enumerate([d for d in os.listdir(BC_PATH) if not d.startswith('.')]):
+    for i, bc in enumerate(sorted([d for d in os.listdir(BC_PATH) if not d.startswith('.')])):
         bc2idx[bc] = i
     return bc2idx
 
@@ -217,7 +217,7 @@ def write_sentibank_to_tfrecords(split=[0.8, 0.1, 0.1]):
                     continue
                 img = np.array(img)
 
-                id = os.path.basename(img_fp).split('.')[0]
+                id = bc + '-' + os.path.basename(img_fp).split('.')[0]
                 h, w = img.shape[0], img.shape[1]
                 img_raw = img.tostring()
                 # Can't use None as a feature, so just pass in a dummmy value. It'll be skipped anyway

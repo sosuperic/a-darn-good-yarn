@@ -3,6 +3,7 @@
 import json
 import numpy as np
 import os
+import pickle
 import tensorflow as tf
 
 from datasets import get_dataset
@@ -113,7 +114,16 @@ class Network(object):
         with tf.Session() as sess:
             # Get data
             self.logger.info('Getting test set')
-            te_img_batch, self.te_label_batch = self.dataset.setup_graph()
+            if self.params['save_preds_for_prog_finetune']:
+                self.logger.info('Saving predictions for prog_finetune: testing on train set')
+                splits = self.dataset.setup_graph()
+                te_img_batch, self.te_label_batch, te_id_batch = splits['train']['img_batch'], \
+                                                                 splits['train']['label_batch'], splits['train']['id_batch']
+                num_batches = self.dataset.get_num_batches('train')
+                id2pred = {}
+            else:
+                te_img_batch, self.te_label_batch = self.dataset.setup_graph()
+                num_batches = self.dataset.get_num_batches('test')
 
             # Get model
             self.logger.info('Building graph')
@@ -140,19 +150,30 @@ class Network(object):
             # print sess.run(tf.trainable_variables()[0])
 
             # Test
-            num_batches = self.dataset.get_num_batches('test')
             for j in range(num_batches):
-                loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op])
+                if self.params['save_preds_for_prog_finetune']:
+                    probs, ids, loss_val, acc_val, summary = sess.run([model.probs, te_id_batch,
+                                                                       self.loss, self.acc, summary_op])
+                    for k in range(len(ids)):
+                        id2pred[ids[k]] = probs[k]
+                else:
+                    loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op])
 
                 self.logger.info('Test minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
                 self.logger.info('................... -- Acc: {}'.format(acc_val))
 
-                # # Write summary
+                # Write summary
                 if j % 10 == 0:
                     summary_writer.add_summary(summary, j)
 
+            if self.params['save_preds_for_prog_finetune']:
+                with open(os.path.join(self.params['ckpt_dirpath'], '{}-{}-id2pred.pkl'.format(
+                        self.params['dataset'], self.params['obj'])), 'w') as f:
+                    pickle.dump(id2pred, f, protocol=2)
+
             coord.request_stop()
             coord.join(threads)
+
 
     ####################################################################################################################
     # Predict

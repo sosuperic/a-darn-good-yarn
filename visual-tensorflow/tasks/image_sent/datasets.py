@@ -100,6 +100,9 @@ class SentibankDataset(Dataset):
     def __init__(self, params):
         super(SentibankDataset, self).__init__(params)
 
+        if params['prog_finetune']:
+            self.id2pred = pickle.load(open(os.path.join(self.params['ckpt_dirpath'], 'sentibank_id2pred.pkl')))
+
     def setup_obj(self):
         super(SentibankDataset, self).setup_obj()
         if 'sent' in self.params['obj']:
@@ -114,7 +117,8 @@ class SentibankDataset(Dataset):
     ####################################################################################################################
     def get_tfrecords_files_list(self):
         """Return list of tfrecord files"""
-        if self.params['mode'] == 'train':
+        if self.params['mode'] == 'train' or \
+                (self.params['mode'] == 'test' and self.params['save_preds_for_prog_finetune']):
             files_list = {}
 
             if self.params['debug']:
@@ -130,8 +134,8 @@ class SentibankDataset(Dataset):
                 # Get test as well so we can get label counts and weight classes
                 files_list['test'] = self._get_tfrecords_files_list('test')
 
-            # Save label2count so we can pass it using feed_dict for loss
-            with open(os.path.join(self.params['save_dir'], 'label2count.json'), 'w') as f:
+            # Save label2count so we can pass it using feed_dict for weighted loss
+            with open(os.path.join(self.params['ckpt_dirpath'], 'label2count.json'), 'w') as f:
                 sorted_label2count = {}
                 for label in sorted(self.label2count):
                     sorted_label2count[label] = self.label2count[label]
@@ -141,6 +145,11 @@ class SentibankDataset(Dataset):
             files_list = self._get_tfrecords_files_list('test')
 
         self.num_batches = {k: int(v / self.params['batch_size']) for k,v in self.num_pts.items()}
+
+        if self.params['prog_finetune']:
+            # TODO: how to calculate num_batches?
+            2
+
         print self.num_pts
         print self.num_batches
 
@@ -208,9 +217,9 @@ class SentibankDataset(Dataset):
         self.mean = mean
         self.std = std
         # Pickle so we can use at test time
-        with open(os.path.join(self.params['save_dir'], 'mean.pkl'), 'w') as f:
+        with open(os.path.join(self.params['ckpt_dirpath'], 'mean.pkl'), 'w') as f:
             pickle.dump(mean, f, protocol=2)
-        with open(os.path.join(self.params['save_dir'], 'std.pkl'), 'w') as f:
+        with open(os.path.join(self.params['ckpt_dirpath'], 'std.pkl'), 'w') as f:
             pickle.dump(std, f, protocol=2)
 
         print 'mean: {}'.format(self.mean)
@@ -228,6 +237,7 @@ class SentibankDataset(Dataset):
         features = tf.parse_single_example(
             serialized_example,
             features={
+                'id': tf.FixedLenFeature([], tf.string),
                 'h': tf.FixedLenFeature([], tf.int64),
                 'w': tf.FixedLenFeature([], tf.int64),
                 'img': tf.FixedLenFeature([], tf.string),
@@ -244,44 +254,54 @@ class SentibankDataset(Dataset):
         # img = tf.image.decode_jpeg(features['img'], channels=3)
         img = tf.reshape(img, [h, w, 3])
         img.set_shape([self.params['img_h'], self.params['img_w'], 3])
-
-        label = tf.cast(features[self.params['obj']], tf.int32)
-
         img = self.preprocess_img(img)
+        label = tf.cast(features[self.params['obj']], tf.int32)
+        id = features['id']
+        pred = 0.0                          # placeholder
 
-        return img, label
+        if self.params['prog_finetune']:
+            # id = tf.decode_raw()
+            pred = self.id2pred[id]
+
+        return img, label, id, pred
 
     def input_pipeline(self, files_list, num_read_threads=5):
         """Create img and label tensors from string input producer queue"""
         input_queue = tf.train.string_input_producer(files_list, shuffle=True)
+        # input_queue = tf.train.string_input_producer(files_list, shuffle=True, num_epochs=self.params['epochs'])
 
         # TODO: where do I get num_read_threads
-        with tf.device('/cpu:0'):       # save gpu for matrix ops
-            img_label_list = [self.read_and_decode(input_queue) for _ in range(num_read_threads)]
+        with tf.device('/cpu:0'):           # save gpu for matrix ops
+            img_label_id_pred_list = [self.read_and_decode(input_queue) for _ in range(num_read_threads)]
         min_after_dequeue = 10000
         capacity = min_after_dequeue + 3 * self.params['batch_size']
-        img_batch, label_batch = tf.train.shuffle_batch_join(
-            img_label_list, batch_size=self.params['batch_size'], capacity=capacity,
+        img_batch, label_batch, id_batch, pred_batch = tf.train.shuffle_batch_join(
+            img_label_id_pred_list, batch_size=self.params['batch_size'], capacity=capacity,
             min_after_dequeue=min_after_dequeue)
 
-        return img_batch, label_batch
+
+        if self.params['prog_finetune']:    # use pred_batch
+            # img_batch, label_batch, id_batch, pred_batch = filter...
+            2
+
+        return img_batch, label_batch, id_batch, pred_batch
 
     def setup_graph(self):
         """Get lists of data, convert to tensors, set up pipeline"""
-        if self.params['mode'] == 'train':
+        if self.params['mode'] == 'train' or \
+                (self.params['mode'] == 'test' and self.params['save_preds_for_prog_finetune']):
             self.splits = defaultdict(dict)
             self.files_list = self.get_tfrecords_files_list()
-            split_names = {0: 'train', 1: 'valid', 2: 'test'}
-            for i in range(3):
-                name = split_names[i]
-                img_batch, label_batch = self.input_pipeline(self.files_list[name])
+            for name in ['train', 'valid', 'test']:
+                img_batch, label_batch, id_batch, pred_batch = self.input_pipeline(self.files_list[name])
                 self.splits[name]['img_batch'] = img_batch
                 self.splits[name]['label_batch'] = label_batch
+                self.splits[name]['id_batch'] = id_batch
             return self.splits
 
         elif self.params['mode'] == 'test':
             self.files_list = self.get_tfrecords_files_list()
-            img_batch, label_batch = self.input_pipeline(self.files_list)
+            img_batch, label_batch, id_batch, pred_batch = self.input_pipeline(self.files_list)
             return img_batch, label_batch
 
     def preprocess_img(self, img):
