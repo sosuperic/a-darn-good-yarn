@@ -7,7 +7,7 @@ Includes analysis of positive-negative sentiment and emotions on images and vide
 - Run in website/ by:
     * `python run.py` (local)
         * visit: `http://localhost:7898/shape`
-    * `gunicorn -w 10 -b 0.0.0.0:7898 run:app` (on Shannon)
+    * `gunicorn -w 2 -b 0.0.0.0:7898 run:app` (on Shannon)
         * visit: `http://18.85.54.48:7898/shape`
 
 ## symlinks
