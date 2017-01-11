@@ -164,7 +164,7 @@ def save_model(sess, saver, params, i, logger):
     """Save model potentially"""
     if (i+1) % params['save_every_epoch'] == 0:
         out_file = saver.save(sess,
-                              os.path.join(params['save_dir'], _get_ckpt_basename(params)),
+                              os.path.join(params['ckpt_dirpath'], _get_ckpt_basename(params)),
                               global_step=i)
         logger.info('Model saved in file: {}'.format(out_file))
 

@@ -10,9 +10,12 @@ import tensorflow as tf
 
 from prepare_data import get_bc2sent, get_bc2emo, get_bc2idx, get_label
 
-BC_PATH = 'data/Sentibank/Flickr/bi_concepts1553'
-BC_MEANSTD_PATH = 'data/Sentibank/Flickr/bc_channelmeanstd'
-TFRECORDS_PATH = 'data/Sentibank/Flickr/tfrecords'
+BC_PATH = {'Sentibank': 'data/Sentibank/Flickr/bi_concepts1553',
+           'MVSO': 'data/MVSO/imgs'}
+BC_MEANSTD_PATH = {'Sentibank': 'data/Sentibank/Flickr/bc_channelmeanstd',
+                   'MVSO': 'data/MVSO/bc_channelmeanstd'}
+TFRECORDS_PATH = {'Sentibank': 'data/Sentibank/Flickr/tfrecords',
+                  'MVSO': 'data/MVSO/tfrecords'}
 EMOLEX_PATH = 'data/emolex/NRC-emotion-lexicon-wordlevel-alphabetized-v0.92.txt'
 
 
@@ -46,10 +49,16 @@ class Dataset(object):
             self.output_dim = 3
         elif self.params['obj'] == 'emo':
             self.label_dtype = tf.int32
-            self.output_dim = 8
+            if self.params['dataset'] == 'Sentibank':
+                self.output_dim = 8
+            elif self.params['dataset'] == 'MVSO':
+                self.output_dim = 20        # 20 and not 24 b/c using emo with max val -- not all emo's are present
         elif self.params['obj'] == 'bc':
             self.label_dtype = tf.int32
-            self.output_dim = 1553
+            if self.params['dataset'] == 'Sentibank':
+                self.output_dim = 1553          # This would change if min_bc_class_size was actually used...
+            elif self.params['dataset'] == 'MVSO':
+                self.output_dim = 4421
 
     ####################################################################################################################
     # Basic getters for public
@@ -159,12 +168,16 @@ class SentibankDataset(Dataset):
         """Helper function to return list of tfrecords files for a specific split"""
         files_list = []
 
-        bc2mean = pickle.load(open(os.path.join(BC_MEANSTD_PATH , 'bc2channelmean.pkl'), 'r'))
-        bc2std =pickle.load(open(os.path.join(BC_MEANSTD_PATH , 'bc2channelstd.pkl'), 'r'))
+        bc_meanstd_path = BC_MEANSTD_PATH[self.params['dataset']]
+        tfrecords_path = TFRECORDS_PATH[self.params['dataset']]
+        bc_path = BC_PATH[self.params['dataset']]
+
+        bc2mean = pickle.load(open(os.path.join(bc_meanstd_path , 'bc2channelmean.pkl'), 'r'))
+        bc2std =pickle.load(open(os.path.join(bc_meanstd_path , 'bc2channelstd.pkl'), 'r'))
         mean, std = np.zeros(3), np.zeros(3)
 
         # Iterate through directory, extract labels from biconcept
-        tfrecords_dir = os.path.join(self.__cwd__, TFRECORDS_PATH)
+        tfrecords_dir = os.path.join(self.__cwd__, tfrecords_path)
         split_dir = os.path.join(tfrecords_dir, split_name)
         n = 0
         for f in [f for f in os.listdir(split_dir) if not f.startswith('.')]:
@@ -173,7 +186,7 @@ class SentibankDataset(Dataset):
             # Potentially skip this biconcept
             # If objective is predicting bc class, skip biconcept if not enough images
             if self.params['obj'] == 'bc':
-                num_imgs = len(os.listdir(os.path.join(self.__cwd__, BC_PATH, bc)))
+                num_imgs = len(os.listdir(os.path.join(self.__cwd__, bc_path, bc)))
                 if num_imgs < self.params['min_bc_class_size']:
                     continue
             # Predicting sentiment (either regression or classification)
@@ -315,6 +328,16 @@ class SentibankDataset(Dataset):
 
 ########################################################################################################################
 ###
+### MVSO DATASET
+###
+########################################################################################################################
+class MVSODataset(SentibankDataset):
+    def __init__(self, params):
+        super(MVSODataset, self).__init__(params)
+    # TODO-refactor: SentibankDataset should just be VSODataset, update get_dataset()
+
+########################################################################################################################
+###
 ### PREDICTION DATASET (predicting values on unseen images, i.e. movie frames)
 ###
 ########################################################################################################################
@@ -381,3 +404,5 @@ def get_dataset(params, vid_dirpath=None):
         return PredictionDataset(params, vid_dirpath)
     elif params['dataset'] == 'Sentibank':
         return SentibankDataset(params)
+    elif params['dataset'] == 'MVSO':
+        return MVSODataset(params)

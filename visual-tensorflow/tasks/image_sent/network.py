@@ -48,8 +48,8 @@ class Network(object):
 
             # Summary ops and writer
             summary_op = self._get_summary_ops()
-            tr_summary_writer = tf.summary.FileWriter(self.params['save_dir'] + '/train', graph=tf.get_default_graph())
-            va_summary_writer = tf.summary.FileWriter(self.params['save_dir'] + '/valid')
+            tr_summary_writer = tf.summary.FileWriter(self.params['ckpt_dirpath'] + '/train', graph=tf.get_default_graph())
+            va_summary_writer = tf.summary.FileWriter(self.params['ckpt_dirpath'] + '/valid')
 
             # Initialize after optimization - this needs to be done after adam
             coord, threads = self._initialize(sess)
@@ -288,7 +288,8 @@ class Network(object):
         model = None
         self.logger.info('Making {} model'.format(self.params['arch']))
         if self.params['arch'] == 'basic_cnn':
-            model = BasicVizsentCNN(batch_size=self.params['batch_size'],
+            model = BasicVizsentCNN(
+                # batch_size=self.params['batch_size'],
                                     img_w=self.params['img_crop_w'],
                                     img_h=self.params['img_crop_h'],
                                     output_dim=self.output_dim,
@@ -311,7 +312,7 @@ class Network(object):
             # Formula: Divide each count into max count, the normalize:
             # Example: [35, 1, 5] -> [1, 3.5, 7] -> [0.08696, 0.30435, 0.608696]
             # ckpt_dir for test, save_dir for training
-            ckpt_dir =  self.params['save_dir'] if self.params['mode'] == 'train' else self.params['ckpt_dirpath']
+            ckpt_dir =  self.params['ckpt_dirpath'] if self.params['mode'] == 'train' else self.params['ckpt_dirpath']
             label2count = json.load(open(os.path.join(ckpt_dir, 'label2count.json'), 'r'))
             label2count = [float(c) for l,c in label2count.items()]             # (num_classes, )
             self.logger.info('Class counts: {}'.format(label2count))
