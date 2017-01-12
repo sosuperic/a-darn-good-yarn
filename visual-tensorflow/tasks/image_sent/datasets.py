@@ -92,6 +92,7 @@ class Dataset(object):
         img_crop_w, img_crop_h = self.params['img_crop_w'], self.params['img_crop_h']
         img = tf.image.resize_image_with_crop_or_pad(img, img_crop_h, img_crop_w)
         img = tf.image.convert_image_dtype(img, tf.float32)
+        img = tf.image.random_flip_left_right(img)
         return img
 
     def input_pipeline(self, files_list, num_read_threads=5):
@@ -225,6 +226,8 @@ class SentibankDataset(Dataset):
                 std = (std * (n-c) / float(n)) + (cur_bc_std * c / float(n))
             except:
                 continue
+
+            # break
 
         # Save mean and std so we can standardize data in graph
         self.mean = mean

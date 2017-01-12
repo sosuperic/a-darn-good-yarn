@@ -66,7 +66,7 @@ class BasicVizsentCNN(object):
 
     def get_shape(self, matrix):
         if type(matrix) == np.ndarray:
-            shape = input.shape
+            shape = matrix.shape
         else:   # tensor
             shape = matrix.get_shape().as_list()
         return shape

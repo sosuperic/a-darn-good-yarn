@@ -142,21 +142,23 @@ def setup_logging(default_level=logging.INFO,
 ########################################################################################################################
 # Neural networks
 ########################################################################################################################
-def get_optimizer(optim_str, lr):
+def get_optimizer(params):
     """Return tf optimizer"""
-    # optim_str = config['model']['optim']
-    # lr = config['model']['lr']
+    optim_name = params['optim']
+    lr = params['lr']
+    weight_decay = params['weight_decay'] if params['weight_decay'] else 0.9
+    momentum = params['momentum'] if params['momentum'] else 0.0
 
-    if optim_str == 'sgd':
+    if optim_name == 'sgd':
         optim = tf.train.GradientDescentOptimizer(lr)
-    if optim_str == 'adadelta':
+    if optim_name == 'adadelta':
         optim = tf.train.AdadeltaOptimizer(learning_rate=lr)
-    if optim_str == 'adagrad':
+    if optim_name == 'adagrad':
         optim = tf.train.AdagradOptimizer(lr)
-    if optim_str == 'adam':
+    if optim_name == 'adam':
         optim = tf.train.AdamOptimizer(learning_rate=lr, epsilon=1.0)
-    if optim_str == 'rmsprop':
-        optim = tf.train.RMSPropOptimizer(lr)
+    if optim_name == 'rmsprop':
+        optim = tf.train.RMSPropOptimizer(lr, decay=weight_decay, momentum=momentum)
 
     return optim
 

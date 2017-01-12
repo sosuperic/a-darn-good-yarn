@@ -33,7 +33,7 @@ if __name__ == '__main__':
     # Basic params for which job (architecture, classification goal) we're running
     # This corresponds to the training parameters set in config.yaml
     parser.add_argument('-a', '--arch', dest='arch', default='basic_cnn',
-                        help='what architecture to use: basic_cnn,vgg,vgg_finetune,attention')
+                        help='what architecture to use: basic_cnn,vgg,vgg_finetune,alexnet')
     parser.add_argument('-obj', dest='obj', default='sent_biclass',
                         help='What to predict: sent_reg,sent_biclass,sent_triclass,emo,bc')
 
@@ -47,7 +47,11 @@ if __name__ == '__main__':
 
     # Job specific training params
     parser.add_argument('-lr', dest='lr', type=float, default=None, help='learning rate')
-    parser.add_argument('-optim', dest='optim', default=None, help='optimziation method')
+    parser.add_argument('-optim', dest='optim', default=None,
+                        help='sgd,adadelta,adagrad,adam,rmsprop; optimziation method')
+    parser.add_argument('--momentum', dest='momentum', type=float, default=None, help='momentum')
+    parser.add_argument('--weight_decay', dest='weight_decay', type=float, default=None, help='weight decay')
+
 
     # Testing options - not found in yaml
     parser.add_argument('-vd', '--vid_dirpath', dest='vid_dirpath',

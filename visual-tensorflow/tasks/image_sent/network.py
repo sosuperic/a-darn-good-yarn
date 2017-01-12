@@ -11,6 +11,7 @@ from prepare_data import SENT_BICLASS_LABEL2INT, SENT_TRICLASS_LABEL2INT, SENTIB
     get_bc2idx
 from core.basic_cnn import BasicVizsentCNN
 from core.vgg.vgg16 import vgg16
+from core.modified_alexnet import ModifiedAlexNet
 from core.utils.utils import get_optimizer, load_model, save_model, setup_logging, scramble_img, scramble_img_recursively
 
 class Network(object):
@@ -39,7 +40,7 @@ class Network(object):
             self._get_loss(model)
 
             # Optimize - split into two steps (get gradients and then apply so we can create summary vars)
-            optimizer = get_optimizer(self.params['optim'], self.params['lr'])
+            optimizer = get_optimizer(self.params)
             grads = tf.gradients(self.loss, tf.trainable_variables())
             self.grads_and_vars = list(zip(grads, tf.trainable_variables()))
             train_step = optimizer.apply_gradients(grads_and_vars=self.grads_and_vars)
@@ -61,21 +62,31 @@ class Network(object):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_tr_batches = self.dataset.get_num_batches('train')
                 for j in range(num_tr_batches):
-                    _, imgs, last_fc, loss_val, acc_val, summary = sess.run([train_step, tr_img_batch, model.last_fc, self.loss, self.acc, summary_op])
-                                                             # feed_dict={'class_weights:0': label2count})
-
-                    # print last_fc
-                    # print imgs[0] == imgs[1]
+                    if self.params['obj'] == 'bc':       # same thing but with topk accuracy
+                        _, imgs, last_fc, loss_val, acc_val, top5_acc_val, top10_acc_val, summary = sess.run(
+                            [train_step, tr_img_batch, model.last_fc, self.loss, self.acc,
+                             self.top5_acc, self.top10_acc, summary_op])
+                    else:
+                        _, imgs, last_fc, loss_val, acc_val, summary = sess.run(
+                            [train_step, tr_img_batch, model.last_fc, self.loss, self.acc, summary_op])
 
                     self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
                     self.logger.info('................... -- Acc: {}'.format(acc_val))
 
-                    # # Write summary
+                    if self.params['obj'] == 'bc':
+                        self.logger.info('................. -- Top-5 Acc: {}'.format(top5_acc_val))
+                        self.logger.info('................. -- Top-10 Acc: {}'.format(top10_acc_val))
+
+                    # Write summary
                     if j % 10 == 0:
                         tr_summary_writer.add_summary(summary, i * num_tr_batches + j)
 
                     # if j == 10:
                     #     break
+
+                    # Save (potentially) before end of epoch just so I don't have to wait
+                    if j % 100 == 0:
+                        save_model(sess, saver, self.params, i, self.logger)
 
                 # Evaluate on validation set (potentially)
                 if (i+1) % self.params['val_every_epoch'] == 0:
@@ -153,6 +164,9 @@ class Network(object):
             # Test
             overall_correct = 0
             overall_num = 0
+            if self.params['obj'] == 'bc':
+                top5_overall_correct = 0
+                top10_overall_correct = 0
             for j in range(num_batches):
                 if self.params['save_preds_for_prog_finetune']:
                     probs, ids, loss_val, acc_val, summary = sess.run([model.probs, te_id_batch,
@@ -167,6 +181,9 @@ class Network(object):
                     loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op],
                                                               feed_dict={'img_batch:0': img_batch,
                                                                         'label_batch:0': label_batch})
+                elif self.params['obj'] == 'bc':
+                    loss_val, acc_val, top5_acc_val, top10_acc_val, summary = sess.run(
+                        [self.loss, self.acc, self.top5_acc, self.top10_acc, summary_op])
                 else:
                     loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op])
 
@@ -177,6 +194,16 @@ class Network(object):
                 self.logger.info('Test minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
                 self.logger.info('................... -- Acc: {}'.format(acc_val))
                 self.logger.info('Overall acc: {}'.format(overall_acc))
+
+                if self.params['obj'] == 'bc':
+                    top5_overall_correct += int(top5_acc_val * te_img_batch.get_shape().as_list()[0])
+                    top10_overall_correct += int(top10_acc_val * te_img_batch.get_shape().as_list()[0])
+                    print top5_acc_val, int(top5_acc_val * te_img_batch.get_shape().as_list()[0]), top5_overall_correct
+                    print top10_acc_val, int(top10_acc_val * te_img_batch.get_shape().as_list()[0]), top10_overall_correct
+                    top5_overall_acc = float(top5_overall_correct) / overall_num
+                    top10_overall_acc = float(top10_overall_correct) / overall_num
+                    self.logger.info('Top5 overall acc: {}'.format(top5_overall_acc))
+                    self.logger.info('Top10 overall acc: {}'.format(top10_overall_acc))
 
                 # Write summary
                 if j % 10 == 0:
@@ -304,6 +331,13 @@ class Network(object):
                           load_weights=load_weights,
                           output_dim=self.output_dim,
                           img_batch=img_batch)
+        elif self.params['arch'] == 'alexnet':
+            model = ModifiedAlexNet(img_w=self.params['img_crop_w'],
+                                    img_h=self.params['img_crop_h'],
+                                    output_dim=self.output_dim,
+                                    imgs=img_batch,
+                                    dropout_keep=self.params['dropout'])
+
         return model
 
     def _get_loss(self, model):
@@ -345,11 +379,20 @@ class Network(object):
             acc = tf.equal(tf.cast(tf.argmax(model.last_fc, 1), tf.int32), label_batch_op)
             self.acc = tf.reduce_mean(tf.cast(acc, tf.float32))
 
+            if self.params['obj'] == 'bc':      # in top-k accuracy
+                top5_acc = tf.nn.in_top_k(model.last_fc, label_batch_op, 5)
+                self.top5_acc = tf.reduce_mean(tf.cast(top5_acc, tf.float32))
+                top10_acc = tf.nn.in_top_k(model.last_fc, label_batch_op, 10)
+                self.top10_acc = tf.reduce_mean(tf.cast(top10_acc, tf.float32))
+
     def _get_summary_ops(self):
         """Define summaries and return summary_op"""
         self.loss_summary = tf.summary.scalar('loss', self.loss)
         if self.params['obj'] != 'sent_reg':    # classification, thus has accuracy
             self.acc_summary = tf.summary.scalar('accuracy', self.acc)
+        if self.params['obj'] == 'bc':
+            self.top5_acc_summary = tf.summary.scalar('top5_accuracy', self.top5_acc)
+            self.top10_acc_summary = tf.summary.scalar('top10_accuracy', self.top10_acc)
 
         # Weights and gradients. TODO: why doesn't this work for test? Type error
         for var in tf.trainable_variables():

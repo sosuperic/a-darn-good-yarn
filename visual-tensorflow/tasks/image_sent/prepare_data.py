@@ -642,7 +642,8 @@ if __name__ == '__main__':
         pprint(get_MVSO_bc2emo2val())
     elif cmdline.VSO_img_fps:
         bc2img_fps = get_all_VSO_img_fps(cmdline.VSO_dataset)
-        print len([k for k, v in bc2img_fps.items() if len(v) > 250])
+        print len([k for k, v in bc2img_fps.items() if len(v) > 120])
+        print len(bc2img_fps)
     elif cmdline.bc2sent:
         pprint(get_bc2sent(cmdline.VSO_dataset))
     elif cmdline.bc2emo:

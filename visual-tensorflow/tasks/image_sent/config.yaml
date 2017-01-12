@@ -34,6 +34,24 @@ basic_cnn:
         optim: adam
         lr: 0.01
 
+alexnet:
+    sent_reg:
+        optim: adam
+        lr: 0.01
+    sent_biclass:
+        optim: adam
+        lr: 0.01
+        ckpt_dir: 2016-12-26___02-09-30
+    sent_triclass:
+        optim: adam
+        lr: 0.01
+    emo:
+        optim: adam
+        lr: 0.005
+    bc:
+        optim: sgd
+        lr: 0.01
+
 vgg:
     sent_reg:
         optim: adam
