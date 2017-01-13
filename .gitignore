@@ -1,20 +1,26 @@
+# Certain types of files
 *.DS_Store
-
-vizsent/Sentibank
-vizsent/models
-vizsent/vids
-vizsent/soumith/models
-
 *.pyc
 *.npz
 *idea/
 *.ipynb_checkpoints
 
+# Large data, models, etc. for original vizsent repo
+vizsent/Sentibank
+vizsent/models
+vizsent/vids
+vizsent/soumith/models
+
+# Training-related
 *logs/
 *checkpoints/
 
+# Data
 *data/
 !*data/README.md
-
 visual-tensorflow/website/shape/core
 visual-tensorflow/website/shape/static/videos
+
+# Local things
+notes/
+outputs/
