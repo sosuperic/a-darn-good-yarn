@@ -24,29 +24,69 @@
       
         // Set up dat.gui
         var DatGui = function() {
-            this.message = 'dat.gui';
-            this.windowSize = 600;
-            this.video = data.titles[0];
+            // Default values
+            this.formats = 'film';
             this.dynamicRange = true;
+            this.films = {};
+            this.films.windowSize = 600;
+            this.films.video = data.format2titles['film'][0];
+            this.shorts = {};
+            this.shorts.windowSize = 60;
+            this.shorts.video = data.format2titles['short'][0];
         };
 
         window.onload = function() {
             var datgui = new DatGui();
             var gui = new dat.GUI();
-            guiW = gui.add(datgui, 'windowSize').min(1).max(2500).step(1);
-            guiV = gui.add(datgui, 'video', data.titles);
-            guiR = gui.add(datgui, 'dynamicRange');
 
-            guiW.onFinishChange(function(windowSize) { getUpdatedPreds(); });
-            guiV.onFinishChange(function(title) { getUpdatedPreds(); });
+            /*** ONE VIDEO VIEW ***/
+            // Set ranges, values
+            var guiFormats = gui.add(datgui, 'formats', ['film', 'short']);
+            var guiR = gui.add(datgui, 'dynamicRange');
+            var guiW = gui.add(datgui.films, 'windowSize').min(1).max(1500).step(1);
+            var guiV = gui.add(datgui.films, 'video', data.format2titles['film']);
+
+            // Dat Gui Handlers
+            guiFormats.onFinishChange(function(format) {
+                // Remove list of videos controller; add titles for that format; swap order of controllers to get back in place
+                gui.__controllers[2].remove();  // window
+                gui.__controllers[2].remove();  // video
+                var guiFormatParams, windowMax;
+                if (format == 'film') {
+                    guiFormatParams = datgui.films;
+                    windowMax = 1500;
+                } else if (format == 'short') {
+                    guiFormatParams = datgui.shorts;
+                    windowMax = 150;
+                }
+                guiW = gui.add(guiFormatParams, 'windowSize').min(1).max(windowMax).step(1);
+                guiV = gui.add(guiFormatParams, 'video', data.format2titles[format]);
+                addFinishChangeHandlers(guiW, guiV);
+
+                // Get new predictions
+                getUpdatedPreds(guiFormatParams.video, guiFormatParams.windowSize); }
+            );
+            function addFinishChangeHandlers(guiW, guiV) {
+                guiW.onFinishChange(function(windowSize) {
+                    var title = datgui.formats == 'film' ? datgui.films.video : datgui.shorts.video;
+                    getUpdatedPreds(title, windowSize);
+                });
+                guiV.onFinishChange(function(title) {
+                    var windowSize = datgui.formats == 'film' ? datgui.films.windowSize : datgui.shorts.windowSize;
+                    getUpdatedPreds(title,windowSize);
+                });
+            }
+            addFinishChangeHandlers(guiW, guiV);
             guiR.onFinishChange(function() { drawChart(datgui); });
 
+            // Draw initial
             show_image("../static/videos/" + data.framepaths[0], 256, 256, '');
             drawChart(datgui);
 
-            function getUpdatedPreds() {
+            // Handlers
+            function getUpdatedPreds(title, windowSize) {
                 $.ajax({
-                    url: '/api/pred/' + datgui.video + '/' + datgui.windowSize,
+                    url: '/api/pred/' + title + '/' + windowSize,
                     type: 'GET',
                     success: function(resp) {
                         reset_and_redraw(resp, redraw_callback);
@@ -56,7 +96,6 @@
                     }
                 })
             }
-
             function reset_and_redraw(resp, redraw_callback) {
                 data.preds = resp.preds;
                 data.framepaths = resp.framepaths;

@@ -2,12 +2,16 @@
 
 import argparse
 from collections import defaultdict, Counter
+from fuzzywuzzy import fuzz
+import io
+import json
 import numpy as np
 import os
 import pickle
 from PIL import Image
 from pprint import pprint
 import re
+import subprocess
 import tensorflow as tf
 import urllib
 
@@ -43,11 +47,14 @@ MVSO_EMO_LABEL2INT = {'ecstasy': 0, 'joy': 1, 'serenity': 2,
 # You dataset - 20k images with emotions
 YOU_IMEMO_PATH = 'data/you_imemo/agg'
 
+# Plutchik
+PLUTCHIK_PATH = 'data/plutchik'
+
 # Videos path
 VIDEOS_PATH = 'data/videos'
 
-# Plutchik
-PLUTCHIK_PATH = 'data/plutchik'
+# CMU Movie Summary path
+CMU_PATH = 'data/CMU_movie_summary/MovieSummaries/'
 
 ########################################################################################################################
 # Sentibank
@@ -563,40 +570,6 @@ def retrieve_you_imemo_imgs(out_dir=os.path.join(YOU_IMEMO_PATH, 'imgs')):
             urllib.urlretrieve(url, os.path.join(emo_dir, img_name))
 
 ########################################################################################################################
-# Videos
-########################################################################################################################
-def save_video_frames(dir):
-    """
-    Loop over videos within dir and save frames to dir/vid/framess
-    """
-    # vid_exts = ['webm', 'mkv', 'flv', 'vob', 'ogv', 'ogg', 'drc', 'gif', 'gifv', 'mng', 'avi', 'mov', 'qt', 'wmv',
-    #             'yuv', 'rm', 'rmvb', 'asf', 'amv', 'mp4', 'm4p', 'm4v', 'mpg', 'mp2', 'mpeg', 'mpe', 'mpv', 'm2v',
-    #             'm4v', 'svi', '3gp', '3g2', 'mxf', 'roq', 'nsv', 'flv', 'f4v', 'f4p', 'f4a', 'f4b']
-    vid_exts = ['mp4']
-    mr = MovieReader()
-
-    vids_path = os.path.join(VIDEOS_PATH, dir)
-    for vid_name in [d for d in os.listdir(vids_path) if not d.startswith('.')]:
-        if os.path.exists(os.path.join(vids_path, vid_name, 'frames')):
-            print vid_name
-            print 'frames already exists'
-            continue
-
-        vid_dirpath = os.path.join(vids_path, vid_name)
-        files = os.listdir(vid_dirpath)
-        movie_file = None
-        for f in files:
-            for ext in vid_exts:
-                if f.endswith(ext):
-                    movie_file = f
-                    break
-        print movie_file
-        if movie_file:
-            movie_path = os.path.join(vid_dirpath, movie_file)
-            print movie_path
-            mr.write_frames(movie_path)
-
-########################################################################################################################
 # Plutchik's wheel of emotions and color
 ########################################################################################################################
 def save_plutchik_color_imgs():
@@ -616,6 +589,177 @@ def save_plutchik_color_imgs():
             import scipy.misc
             scipy.misc.imsave(os.path.join(PLUTCHIK_PATH, '{}_{}.jpg'.format(i, label)), im)
 
+########################################################################################################################
+# Videos
+########################################################################################################################
+def save_video_frames(vids_dir):
+    """
+    Loop over subdirs within vids_dir and save frames to subdir/frames/
+
+    Parameters
+    ----------
+    vids_dir: directory within VIDEOS_PATH that contains sub-directories, each which may contain a movie
+    """
+    vid_exts = ['webm', 'mkv', 'flv', 'vob', 'ogv', 'ogg', 'drc', 'gif', 'gifv', 'mng', 'avi', 'mov', 'qt', 'wmv',
+                'yuv', 'rm', 'rmvb', 'asf', 'amv', 'mp4', 'm4p', 'm4v', 'mpg', 'mp2', 'mpeg', 'mpe', 'mpv', 'm2v',
+                'm4v', 'svi', '3gp', '3g2', 'mxf', 'roq', 'nsv', 'flv', 'f4v', 'f4p', 'f4a', 'f4b']
+    # vid_exts = ['mp4', 'avi']
+    mr = MovieReader()
+
+    vids_path = os.path.join(VIDEOS_PATH, vids_dir)
+    ext2count = defaultdict(int)
+    i = 0
+    successes = []
+    for vid_name in [d for d in os.listdir(vids_path) if not d.startswith('.')]:
+        # Skip if frames/ already exists and has some frames in it
+        if os.path.exists(os.path.join(vids_path, vid_name, 'frames')):
+            if len(os.listdir(os.path.join(vids_path, vid_name, 'frames'))) != 0:
+                continue
+
+        # Get the actual video file, while also removing any sample video files if they are there
+        vid_dirpath = os.path.join(vids_path, vid_name)
+        files = os.listdir(vid_dirpath)
+        movie_file = None
+        vid_ext = None
+        for f in files:
+            if 'sample' in f:
+                try:
+                    os.remove(os.path.join(vid_dirpath, f))
+                except Exception as e:
+                    print 'Removed sample file {} for {}'.format(f, vid_name)
+        for f in files:
+            for ext in vid_exts:
+                if f.endswith(ext):
+                    movie_file = f
+                    ext2count[ext] += 1
+                    vid_ext = ext
+
+        # Try to save frames for video file
+        if movie_file:
+            print '=' * 100
+            print 'Video: {}'.format(vid_name)
+            print 'Format: {}'.format(vid_ext)
+            movie_path = os.path.join(vid_dirpath, movie_file)
+            try:
+                mr.write_frames(movie_path)
+                i += 1
+                successes.append(vid_name)
+                # TODO: should check number of frames -- sometimes only a few saved, there's an error going through file
+            except Exception as e:
+                print e
+
+    print '=' * 100
+    print 'Created frames for {}'.format(successes)
+    print 'Extension counts: {}'.format(ext2count)
+    print 'Created frames for {} videos'.format(i)
+
+def convert_avis_to_mp4s(vids_dir):
+    """
+    Convert videos from avi to mp4
+
+    Notes
+    -----
+    Frames cannot be extracted from avi files using MovieReader currently, thus convert to more standard mp4 format
+
+    Parameters
+    ----------
+    vids_dir: directory within VIDEOS_PATH that contains sub-directories, each which may contain a movie
+    """
+    vids_path = os.path.join(VIDEOS_PATH, vids_dir)
+    vid_dirs = [d for d in os.listdir(vids_path) if not d.startswith('.')]
+    for vid_dir in vid_dirs:
+        # Find avi file if it exists
+        vid_dirpath = os.path.join(vids_path, vid_dir)
+        filenames = os.listdir(vid_dirpath)
+        avi_fn = None
+        for fn in filenames:
+            if fn.endswith('avi'):
+                avi_fn = fn
+
+        # Convert to mp4, clean up if it succeeds
+        if avi_fn:
+            try:
+                print '=' * 100
+                print '=' * 100
+                print '=' * 100
+                print 'Found avi file to convert for: {}'.format(vid_dir)
+                mp4_fn = avi_fn.split('.avi')[0] + '.mp4'
+                avi_path = os.path.join(vid_dirpath, avi_fn)
+                mp4_path = os.path.join(vid_dirpath, mp4_fn)
+                bash_command = ['avconv', '-i'] + [avi_path] + ['-c:v', 'libx264', '-c:a', 'copy'] + [mp4_path]
+                # Not using split() on bash command string because path's may have spaces
+                print bash_command
+                subprocess.call(bash_command, stdout=subprocess.PIPE)
+                print 'Done converting, will remove avi file'
+                os.remove(avi_path)
+            except Exception as e:
+                print e
+
+
+def match_movie_metadata(vids_dir):
+    """
+    Get metadata for each video in vids_dir
+
+    Parameters
+    ----------
+    vids_dir: directory within VIDEOS_PATH that contains sub-directories, each which may contain a movie
+
+    Notes
+    -----
+    Assumes each subdirectory is similar to the format: <title> (<year>), e.g. King's Speech (2010)
+
+    movie.metadata.tsv columns:
+    # 1. Wikipedia movie ID ('975900')
+    # 2. Freebase movie ID ('/m/03vyhn')
+    # 3. Movie name ('Ghosts of Mars')
+    # 4. Movie release date (2001-08-24)
+    # 5. Movie box office revenue  ('14010832')
+    # 6. Movie runtime ('98.0')
+    # 7. Movie languages (Freebase ID:name tuples) ('{"/m/02h40lc": "English Language"}')
+    # 8. Movie countries (Freebase ID:name tuples) ('{"/m/09c7w0": "United States of America"}'
+    # 9. Movie genres (Freebase ID:name tuples) ('{"/m/01jfsb": "Thriller", "/m/06n90": "Science Fiction", ...}\n'}
+    """
+
+    movie2metadata = {}
+    with open(os.path.join(CMU_PATH, 'movie.metadata.tsv'), 'r') as f:
+        for line in f.readlines():
+            line = line.strip('\n').split('\t')
+            movie2metadata[line[2]] = {'date': line[3],
+                                       'revenue': None if line[4] == '' else int(line[4]),
+                                       'runtime': None if line[5] == '' else float(line[5]),
+                                       'genres': json.loads(line[8]).values()}
+    movies = movie2metadata.keys()
+
+    movie2tropes = defaultdict(list)
+    with open(os.path.join(CMU_PATH, 'tvtropes.clusters.txt'), 'r') as f:
+        for line in f.readlines():
+            trope, movie_data = line.split('\t')
+            movie_data = json.loads(movie_data)     # char, movie, id, actor
+            movie2tropes[movie_data['movie']].append(trope)
+
+
+    with io.open('notes/CMU_tvtropes_movies.txt', 'w') as f:
+        for movie in movie2tropes.keys():
+            f.write(movie)
+            f.write(u'\n')
+
+    vids_path = os.path.join(VIDEOS_PATH, vids_dir)
+    vid_dirs = [d for d in os.listdir(vids_path) if not d.startswith('.')]
+    i = 0
+    for vid_dir in vid_dirs:
+        # print vid_dir
+        m = re.match(r'(.+)\(\d+\)?$', vid_dir)
+        title = m.group(1)
+        matched = sorted([(fuzz.ratio(title, movie_name), movie_name) for movie_name in movies])[-1]
+        # print title, matched
+
+        if matched[0] > 90:
+            i += 1
+        else:
+            print title, matched
+
+    print i, len(vid_dirs)
+
 if __name__ == '__main__':
 
     # Set up commmand line arguments
@@ -631,9 +775,12 @@ if __name__ == '__main__':
     parser.add_argument('--move_bad_jpgs', dest='move_bad_jpgs', action='store_true')
     parser.add_argument('--bc_channel_mean_std', dest='bc_channel_mean_std', action='store_true')
     parser.add_argument('--you_dl_imgs', dest='you_dl_imgs', action='store_true')
-    parser.add_argument('--save_video_frames', dest='save_video_frames', action='store_true')
-    parser.add_argument('--videos_dir', dest='videos_dir', default=None, help='folder that contains dirs (one movie each)')
     parser.add_argument('--save_plutchik_color_imgs', dest='save_plutchik_color_imgs', action='store_true')
+    parser.add_argument('--save_video_frames', dest='save_video_frames', action='store_true')
+    parser.add_argument('--convert_avis_to_mp4s', dest='convert_avis_to_mp4s', action='store_true')
+    parser.add_argument('--match_movie_metadata', dest='match_video_metadata', action='store_true')
+    parser.add_argument('--vids_dir', dest='vids_dir', default=None, help='folder that contains dirs (one movie each)')
+
     cmdline = parser.parse_args()
 
     if cmdline.MVSO_dl_imgs:
@@ -658,7 +805,11 @@ if __name__ == '__main__':
         save_bc_channel_mean_std(cmdline.VSO_dataset)
     elif cmdline.you_dl_imgs:
         retrieve_you_imemo_imgs()
-    elif cmdline.save_video_frames:
-        save_video_frames(cmdline.videos_dir)
     elif cmdline.save_plutchik_color_imgs:
         save_plutchik_color_imgs()
+    elif cmdline.save_video_frames:
+        save_video_frames(cmdline.vids_dir)
+    elif cmdline.convert_avis_to_mp4s:
+        convert_avis_to_mp4s(cmdline.vids_dir)
+    elif cmdline.match_video_metadata:
+        match_movie_metadata(cmdline.vids_dir)
