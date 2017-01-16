@@ -22,5 +22,5 @@ visual-tensorflow/website/shape/core
 visual-tensorflow/website/shape/static/videos
 
 # Local things
-notes/
-outputs/
+notes
+*outputs

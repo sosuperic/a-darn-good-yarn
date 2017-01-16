@@ -5,12 +5,14 @@ import json
 from natsort import natsorted
 import os
 import pandas as pd
+import pickle
 from flask import Flask, Response, request, render_template
 
 from shape import app
 from core.predictions.utils import smooth
 
 VIDEOS_PATH = 'shape/static/videos/'
+OUTPUTS_PATH = 'shape/outputs/'
 
 title2vidpath = {}
 format2titles = defaultdict(list)
@@ -23,7 +25,7 @@ cur_pd_df = None
 cur_vid_framepaths = None
 
 #################################################################################################
-# PREDICTION FUNCTIONS 
+# PREDICTION FUNCTIONS
 #################################################################################################
 def get_preds_from_df(df, window_len=48):
     """Return smoothed preds: each key is the label, value is list of frame-wise predictions"""
@@ -60,7 +62,7 @@ def get_cur_vid_framepaths():
 
 def setup_initial_data():
     """
-    Return initial data to pass to template. 
+    Return initial data to pass to template.
     Also set global variables cur_pd_df and cur_title
     """
     global title2vidpath, format2titles, title2format, \
@@ -77,6 +79,9 @@ def setup_initial_data():
     for format, titles in format2titles.items():
         format2titles[format] = sorted(titles)
 
+    for format, titles in format2titles.items():
+        print '{}: {}'.format(format, len(titles))
+
     # Get information for first video to show
     # cur_format = format2titles.keys()[0]
     cur_format = 'film'
@@ -86,8 +91,16 @@ def setup_initial_data():
 
     print 'done'
 
+def get_cluster_data():
+    with open(os.path.join(OUTPUTS_PATH, 'cluster/data', 'centroids_nALL-k5-ds3.pkl'), 'r') as f:
+        cluster = pickle.load(f)
+    return cluster
+
+    # TODO: have a route /api/cluster/<format>/<k>' that returns that data
+        # FOR now, just gonna return it in regular so I can get a chartjs plot up
+
 #################################################################################################
-# ROUTING FUNCTIONS 
+# ROUTING FUNCTIONS
 #################################################################################################
 @app.route('/shape', methods=['GET'])
 def shape():
@@ -100,6 +113,10 @@ def shape():
     # framepaths to display image for current video
     # preds to create graph for current video
 
+    # # TODO: tmp
+    # data['cluster'] = get_cluster_data()
+    # print data['cluster']
+
     return render_template('plot_shape.html', data=json.dumps(data))
 
 @app.route('/api/pred/<title>/<window_len>', methods=['GET'])
@@ -110,7 +127,7 @@ def get_preds_and_frames(title, window_len):
     if title != cur_title:
         cur_format = title2format[title]
         cur_title = title
-        cur_pd_df = pd.read_csv(os.path.join(title2vidpath[cur_title], 'preds', 'sent_biclass.csv'))
+        cur_pd_df = pd.read_csv(os.path.join(title2vidpath[cur_title], 'preds', 'sent_biclass_19.csv'))
         cur_vid_framepaths = get_cur_vid_framepaths()
 
     preds = get_preds_from_df(cur_pd_df, window_len=int(window_len))

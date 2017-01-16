@@ -16,13 +16,22 @@
         <canvas id="chart" width="800" height="400"></canvas>
     </div>
     <div style="padding-left:222px;padding-top:50px" id="frame"></div>
+        <div style="max-width:800px; max-height:400px">
+        <canvas id="clusterChart" width="800" height="400"></canvas>
+    </div>
+
     <script type="text/javascript">
-        // Global variables 
+        /***************************************************************************************************************
+        * Global variables
+        ***************************************************************************************************************/
         var data = {{ data|safe }};     // load data from Flask using Jinja
         var myLineChart;
+        var clusterChart;
         console.log(data);
-      
-        // Set up dat.gui
+
+        /***************************************************************************************************************
+        * Set up dat gui
+        ***************************************************************************************************************/
         var DatGui = function() {
             // Default values
             this.formats = 'film';
@@ -35,6 +44,9 @@
             this.shorts.video = data.format2titles['short'][0];
         };
 
+        /***************************************************************************************************************
+        * On window load
+        ***************************************************************************************************************/
         window.onload = function() {
             var datgui = new DatGui();
             var gui = new dat.GUI();
@@ -77,11 +89,12 @@
                 });
             }
             addFinishChangeHandlers(guiW, guiV);
-            guiR.onFinishChange(function() { drawChart(datgui); });
+            guiR.onFinishChange(function() { drawOneVideo(datgui); });
 
             // Draw initial
             show_image("../static/videos/" + data.framepaths[0], 256, 256, '');
-            drawChart(datgui);
+            drawOneVideo(datgui);
+//            drawCluster(datgui);
 
             // Handlers
             function getUpdatedPreds(title, windowSize) {
@@ -103,15 +116,32 @@
             }
             function redraw_callback() {
                 show_image("/static/videos/" + data.framepaths[0], 256, 256, '');
-                drawChart(datgui);
+                drawOneVideo(datgui);
             }
-        };
+        }
 
-        
-    </script>
 
-    <script>
-        function drawChart(datgui) {
+        /***************************************************************************************************************
+        * Utility functions
+        ***************************************************************************************************************/
+        function show_image(src, width, height, alt) {
+            var frameElement = document.getElementById("frame");
+            if (frameElement.firstChild) {      // if element already exists
+                frameElement.firstChild.src = src;
+            } else {                            // make element and append to DOM
+                var img = document.createElement("img");
+                img.src = src;
+                img.width = width;
+                img.height = height;
+                img.alt = alt;
+                frameElement.appendChild(img);
+            }
+        }
+
+        /***************************************************************************************************************
+        * Draw chart for one image view - show images on hover
+        ***************************************************************************************************************/
+        function drawOneVideo(datgui) {
             // Each label is the timestamp hr:min:sec in the video
             function getLabels(data) {
                 var numSec = data.length;
@@ -139,7 +169,7 @@
                 })
             }
             // Use first set
-            var labels = getLabels(data.preds[Object.keys(data.preds)[0]]);     
+            var labels = getLabels(data.preds[Object.keys(data.preds)[0]]);
             var chartData = {
                 labels: labels,
                 datasets: dataset
@@ -195,23 +225,82 @@
             myLineChart = new Chart(ctx, {
                 type: 'line',
                 data: chartData,
-                options: options,
+                options: options
             });
         }
 
-        function show_image(src, width, height, alt) {
-            var frameElement = document.getElementById("frame");
-            if (frameElement.firstChild) {      // if element already exists
-                frameElement.firstChild.src = src;
-            } else {                            // make element and append to DOM
-                var img = document.createElement("img");
-                img.src = src;
-                img.width = width;
-                img.height = height;
-                img.alt = alt;
-                frameElement.appendChild(img);
+        /***************************************************************************************************************
+        * Draw chart for cluster view
+        ***************************************************************************************************************/
+        function drawCluster(datgui) {
+
+
+            // Get dataset
+            // Each object in dataset array corresponds to one line
+            var dataset = [];
+            for (var i = 0; i < data.cluster.length; i++) {
+                dataset.push({
+                    label: i,
+                    borderWidth: 0.1,
+                    data: data.cluster[i],
+                    borderWidth: 1,
+                    fill: false,
+                    borderColor: getRandomColor()
+                });
             }
-        }
+            var labels = [];
+            for (var i = 0; i < data.cluster[0].length; i++) {
+                labels.push(i);
+            }
+            var chartData = {
+                labels: labels,
+                datasets: dataset
+            };
+            function getRandomColor() {
+                var letters = '0123456789ABCDEF';
+                var color = '#';
+                for (var i = 0; i < 6; i++ ) {
+                    color += letters[Math.floor(Math.random() * 16)];
+                }
+                return color;
+            }
+
+            // Options for chartjs
+            var options = {
+                global: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                },
+                elements: {   // Don't show individual points on line graph
+                    point:{
+                        radius: 0
+                    }
+                },
+                tooltips: {     // tooltip for points on current mouse x-axis position
+                    mode: 'index',
+                    intersect: false
+                },
+                scales: {
+                    xAxes: [{
+                        display: false
+                    }]
+                },
+                animation: {
+                    duration: 0
+                }
+            };
+
+            var ctx = $("#clusterChart");
+//            if (clusterChart) {
+//                clusterChart.destroy();
+//            }
+            clusterChart = new Chart(ctx, {
+                    type: 'line',
+                    data: chartData,
+                    options: options
+                });
+            }
+
     </script>
 </body>
 </html>

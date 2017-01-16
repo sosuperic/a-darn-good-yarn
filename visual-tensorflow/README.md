@@ -18,6 +18,7 @@ Includes analysis of positive-negative sentiment and emotions on images and vide
         * These are currently also set up in `bash/setup_symlinks.sh` (and should be added for each subsequent task). They are not done for the datasets because the location of the datasets is up to the user and system.
     * `core` in `website/shape/`
     * `videos` in `website/shape/static`
+    * `outputs` in `website/shape/`
 - To set up a symlink:
     * Go to directory where symlink should be placed, and run `ln -s <actual directory> <name of directory>`
         * Example: in `tasks/image-sent/`, run `ln -s ../../core core`
