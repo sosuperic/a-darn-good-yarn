@@ -53,7 +53,9 @@ class CreditsLocator(object):
         # Get second half of files - second half because beginning may have some text too (I would also like to
         # eventually filter out the production company, etc., but these are more varied and harder to detect)
         files = glob.glob('{}/frames/*.jpg'.format(vid_path))
-        files = natsorted(files)[len(files)/2:]
+        # Key lambda natsort on frames
+        # Sort on frame filename instead of full path because natsorted has trouble with unicode title names
+        files = natsorted(files, lambda path: os.path.basename(path))[len(files)/2:]
 
         start_time = time.time()
 
