@@ -247,6 +247,10 @@ class Network(object):
             dirpaths = self.get_all_vidpaths_with_frames(self.params['vid_dirpath'])
 
         for dirpath in dirpaths:
+            # Skip if exists
+            # if os.path.exists(os.path.join(dirpath, 'preds', 'sent_biclass_19.csv')):
+            #     print 'Skip: {}'.format(dirpath)
+            #     continue
             with tf.Session() as sess:
                 # Get data
                 self.logger.info('Getting images to predict for {}'.format(dirpath))

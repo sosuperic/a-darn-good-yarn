@@ -17,6 +17,7 @@ import urllib
 
 from core.utils.utils import read_yaml
 from core.utils.MovieReader import MovieReader
+from core.utils.CreditsLocator import CreditsLocator
 
 
 ### SENTIBANK + MVSO
@@ -622,7 +623,7 @@ def save_video_frames(vids_dir):
         movie_file = None
         vid_ext = None
         for f in files:
-            if 'sample' in f:
+            if 'sample' in f.lower():
                 try:
                     os.remove(os.path.join(vid_dirpath, f))
                 except Exception as e:
@@ -650,7 +651,7 @@ def save_video_frames(vids_dir):
 
     print '=' * 100
     print 'Created frames for {}'.format(successes)
-    print 'Extension counts: {}'.format(ext2count)
+    print 'Extension counts: {}'.format(ext2count)      # will only be for movies without frames/
     print 'Created frames for {} videos'.format(i)
 
 def convert_avis_to_mp4s(vids_dir):
@@ -695,6 +696,24 @@ def convert_avis_to_mp4s(vids_dir):
             except Exception as e:
                 print e
 
+def save_credits_index(vids_dir, overwrite_files=False):
+    """
+    Save index of frames/ for when credits start
+    """
+    cl = CreditsLocator(overwrite_files=overwrite_files)
+    vids_path = os.path.join(VIDEOS_PATH, vids_dir)
+    vid_dirs = [d for d in os.listdir(vids_path) if not d.startswith('.')]
+    not_located = []
+    for vid_dir in vid_dirs:
+        print '=' * 100
+        print vid_dir
+        located = cl.locate_credits(os.path.join(vids_path, vid_dir))
+        if not located:
+            not_located.append(vid_dir)
+
+    print '=' * 100
+    print 'Credits not located for {} movies:'.format(len(not_located))
+    pprint(sorted(not_located))
 
 def match_movie_metadata(vids_dir):
     """
@@ -778,8 +797,12 @@ if __name__ == '__main__':
     parser.add_argument('--save_plutchik_color_imgs', dest='save_plutchik_color_imgs', action='store_true')
     parser.add_argument('--save_video_frames', dest='save_video_frames', action='store_true')
     parser.add_argument('--convert_avis_to_mp4s', dest='convert_avis_to_mp4s', action='store_true')
+    parser.add_argument('--save_credits_index', dest='save_credits_index', action='store_true')
+    parser.add_argument('--save_credits_index_overwrite', dest='save_credits_index_overwrite', default=False,
+                        action='store_true', help='overwrite credits_index.txt files')
     parser.add_argument('--match_movie_metadata', dest='match_video_metadata', action='store_true')
-    parser.add_argument('--vids_dir', dest='vids_dir', default=None, help='folder that contains dirs (one movie each)')
+    parser.add_argument('--vids_dir', dest='vids_dir', default=None,
+                        help='folder that contains dirs (one movie each), e.g. films/MovieQA_full_movies')
 
     cmdline = parser.parse_args()
 
@@ -811,5 +834,7 @@ if __name__ == '__main__':
         save_video_frames(cmdline.vids_dir)
     elif cmdline.convert_avis_to_mp4s:
         convert_avis_to_mp4s(cmdline.vids_dir)
+    elif cmdline.save_credits_index:
+        save_credits_index(cmdline.vids_dir, overwrite_files=cmdline.save_credits_index_overwrite)
     elif cmdline.match_video_metadata:
         match_movie_metadata(cmdline.vids_dir)

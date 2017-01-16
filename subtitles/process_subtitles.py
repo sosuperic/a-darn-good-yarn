@@ -24,9 +24,10 @@ def process_subs(path):
 		for s in subs:
 			text = s.text.encode('utf-8')	# TODO: errors with invalid continuation byte / invalid start byte
 			text = text.replace("\n", " ")
-			sm, ss, em, es = s.start.minutes, s.start.seconds, s.end.minutes, s.end.seconds
-			writer.writerow([text, sm, ss, em, es])
-			subs_pkl.append([text, sm, ss, em, es])
+			sh, sm, ss = s.start.hours, s.start.minutes, s.start.seconds
+			eh, em, es = s.end.hours, s.end.minutes, s.end.seconds
+			writer.writerow([text, sh, sm, ss, eh, em, es])
+			subs_pkl.append([text, sh, sm, ss, eh, em, es])
 
 	f = open(os.path.join(movie_dir, 'subs.pkl'), 'wb')
 	pickle.dump(subs_pkl, f, protocol=2)
@@ -46,4 +47,5 @@ def process_all_subs():
 					print(e)
 
 if __name__ == '__main__':
-	process_all_subs()
+	# process_all_subs()
+	process_subs('/Users/eric/Movies/films/Other/Ant Man (2015)/English.srt')
