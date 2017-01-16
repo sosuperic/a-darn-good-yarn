@@ -13,6 +13,7 @@ from core.predictions.utils import smooth
 from core.utils.utils import get_credits_idx
 
 PRED_FN = 'sent_biclass_19.csv'
+# PRED_FN = 'sent_biclass.csv'
 VIDEOS_PATH = 'shape/static/videos/'
 OUTPUTS_PATH = 'shape/outputs/'
 
@@ -85,8 +86,7 @@ def setup_initial_data():
     Return initial data to pass to template.
     Also set global variables cur_pd_df and cur_title
     """
-    global title2vidpath, format2titles, title2format, \
-        cur_format, cur_title, cur_pd_df, cur_vid_framepaths
+    global title2vidpath, format2titles, title2format
 
     # Set global variables reltaed to *all* videos
     vidpaths = get_all_vidpaths_with_preds()
@@ -103,20 +103,18 @@ def setup_initial_data():
     for format, titles in format2titles.items():
         print '{}: {}'.format(format, len(titles))
 
-    # Get information for *first* video to show
-    # cur_format = format2titles.keys()[0]
-    cur_format = 'film'
-    cur_title = format2titles[cur_format][0]
-    cur_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
-
     print 'Setup done'
 
 def get_cluster_data():
-    with open(os.path.join(OUTPUTS_PATH, 'cluster/data', 'centroids_nALL-k5-ds3.pkl'), 'r') as f:
-        cluster = pickle.load(f)
-    return cluster
+    # TODO: this is hardcoded in right now, probably should be moved somewhere?
+    ks = [5]
+    clusters = {}
+    for k in ks:
+        with open(os.path.join(OUTPUTS_PATH, 'cluster/data', 'old/centroids_nALL-k{}-ds3.pkl'.format(k)), 'r') as f:
+            clusters[str(k)] = pickle.load(f)       # use string so it's treated as a js Object instead of an array in template
+    return clusters
 
-    # TODO: have a route /api/cluster/<format>/<k>' that returns that data
+    # TODO: have a route /api/cluster/<format>/<k>' that returns that data?
         # FOR now, just gonna return it in regular so I can get a chartjs plot up
 
 #################################################################################################
@@ -125,7 +123,14 @@ def get_cluster_data():
 @app.route('/shape', methods=['GET'])
 def shape():
     """Main shape template with initial data"""
-    global format2titles, cur_pd_df, cur_vid_framepaths
+    global format2titles, \
+        cur_format, cur_title, cur_pd_df, cur_vid_framepaths
+
+    # Get information for *first* video to show
+    # cur_format = format2titles.keys()[0]
+    cur_format = 'film'
+    cur_title = format2titles[cur_format][0]
+    cur_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
     cur_vid_preds = get_preds_from_df(cur_pd_df, window_len=300)    # Window_len has to match default in html file
 
     data = {'format2titles': format2titles, 'framepaths': cur_vid_framepaths, 'preds': cur_vid_preds}
@@ -134,8 +139,8 @@ def shape():
     # preds to create graph for current video
 
     # # TODO: tmp
-    # data['cluster'] = get_cluster_data()
-    # print data['cluster']
+    data['clusters'] = get_cluster_data()
+    # print data['clusters']
 
     return render_template('plot_shape.html', data=json.dumps(data))
 

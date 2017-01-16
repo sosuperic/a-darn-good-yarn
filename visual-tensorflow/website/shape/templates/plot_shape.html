@@ -12,21 +12,17 @@
 
 <body>
     <div id="plot"></div>
-    <div style="max-width:800px; max-height:400px">
-        <canvas id="chart" width="800" height="400"></canvas>
+    <div style="max-width:800px; max-height:500px">
+        <canvas id="chart" width="800" height="500"></canvas>
     </div>
-    <div style="padding-left:222px;padding-top:50px" id="frame"></div>
-        <div style="max-width:800px; max-height:400px">
-        <canvas id="clusterChart" width="800" height="400"></canvas>
-    </div>
+    <div style="padding-left:275px;padding-top:50px" id="frame"></div>
 
     <script type="text/javascript">
         /***************************************************************************************************************
         * Global variables
         ***************************************************************************************************************/
         var data = {{ data|safe }};     // load data from Flask using Jinja
-        var myLineChart;
-        var clusterChart;
+        var chart;
         console.log(data);
 
         /***************************************************************************************************************
@@ -34,14 +30,25 @@
         ***************************************************************************************************************/
         var DatGui = function() {
             // Default values
-            this.formats = 'film';
-            this.dynamicRange = true;
-            this.films = {};
-            this.films.windowSize = 600;
-            this.films.video = data.format2titles['film'][0];
-            this.shorts = {};
-            this.shorts.windowSize = 60;
-            this.shorts.video = data.format2titles['short'][0];
+            this.view = 'One video';
+
+            // One Video View - intialize
+            var oneVideo = {};
+            oneVideo.format = 'film';
+            oneVideo.dynamicRange = true;
+            oneVideo.films = {};
+            oneVideo.films.windowSize = 600;
+            oneVideo.films.video = data.format2titles['film'][0];
+            oneVideo.shorts = {};
+            oneVideo.shorts.windowSize = 60;
+            oneVideo.shorts.video = data.format2titles['short'][0];
+            this.oneVideo = oneVideo;
+
+            // Clusters View - intialize
+            var clusters = {};
+            clusters.format = 'film';
+            clusters.k = Object.keys(data.clusters);
+            this.clusters = clusters;
         };
 
         /***************************************************************************************************************
@@ -51,52 +58,97 @@
             var datgui = new DatGui();
             var gui = new dat.GUI();
 
-            /*** ONE VIDEO VIEW ***/
-            // Set ranges, values
-            var guiFormats = gui.add(datgui, 'formats', ['film', 'short']);
-            var guiR = gui.add(datgui, 'dynamicRange');
-            var guiW = gui.add(datgui.films, 'windowSize').min(1).max(1500).step(1);
-            var guiV = gui.add(datgui.films, 'video', data.format2titles['film']);
+            /***********************************************************************************************************
+             * Manage views
+             **********************************************************************************************************/
+            var guiView = gui.add(datgui, 'view', ['One video', 'Clusters']);
 
-            // Dat Gui Handlers
-            guiFormats.onFinishChange(function(format) {
-                // Remove list of videos controller; add titles for that format; swap order of controllers to get back in place
-                gui.__controllers[2].remove();  // window
-                gui.__controllers[2].remove();  // video
-                var guiFormatParams, windowMax;
-                if (format == 'film') {
-                    guiFormatParams = datgui.films;
-                    windowMax = 1500;
-                } else if (format == 'short') {
-                    guiFormatParams = datgui.shorts;
-                    windowMax = 150;
+            guiView.onFinishChange(function(view) {
+                removeViewSpecificGUI();
+                if (view == 'One video') {
+                    addOneVideoGUI();
+                    drawOneVideo(datgui);
+                    showImage("../static/videos/" + data.framepaths[0], 256, 256, '');
+                } else if (view == 'Clusters') {
+                    removeFrame();
+                    addClustersGUI();
+                    drawClusters(datgui);
                 }
-                guiW = gui.add(guiFormatParams, 'windowSize').min(1).max(windowMax).step(1);
-                guiV = gui.add(guiFormatParams, 'video', data.format2titles[format]);
-                addFinishChangeHandlers(guiW, guiV);
+            });
 
-                // Get new predictions
-                getUpdatedPreds(guiFormatParams.video, guiFormatParams.windowSize); }
-            );
-            function addFinishChangeHandlers(guiW, guiV) {
-                guiW.onFinishChange(function(windowSize) {
-                    var title = datgui.formats == 'film' ? datgui.films.video : datgui.shorts.video;
-                    getUpdatedPreds(title, windowSize);
-                });
-                guiV.onFinishChange(function(title) {
-                    var windowSize = datgui.formats == 'film' ? datgui.films.windowSize : datgui.shorts.windowSize;
-                    getUpdatedPreds(title,windowSize);
-                });
+            // Remove all but the first controller (the view controller)
+            function removeViewSpecificGUI() {
+                numControllers = gui.__controllers.length;
+                for (var i = 0; i < numControllers - 1; i++) {
+                    gui.__controllers[1].remove();
+                }
             }
-            addFinishChangeHandlers(guiW, guiV);
-            guiR.onFinishChange(function() { drawOneVideo(datgui); });
 
-            // Draw initial
-            show_image("../static/videos/" + data.framepaths[0], 256, 256, '');
+            /***********************************************************************************************************
+             * One video view
+             **********************************************************************************************************/
+            function addOneVideoGUI() {
+                // Set ranges, values
+                var guiFormats = gui.add(datgui.oneVideo, 'format', ['film', 'short']);
+                var guiR = gui.add(datgui.oneVideo, 'dynamicRange');
+                var guiW = gui.add(datgui.oneVideo.films, 'windowSize').min(1).max(1500).step(1);
+                var guiV = gui.add(datgui.oneVideo.films, 'video', data.format2titles['film']);
+
+                // Dat Gui Handlers
+                guiFormats.onFinishChange(function(format) {
+                    // Remove list of videos controller; add titles for that format; swap order of controllers to get back in place
+                    gui.__controllers[3].remove();  // window
+                    gui.__controllers[3].remove();  // video
+                    var guiFormatParams, windowMax;
+                    if (format == 'film') {
+                        guiFormatParams = datgui.oneVideo.films;
+                        windowMax = 1500;
+                    } else if (format == 'short') {
+                        guiFormatParams = datgui.oneVideo.shorts;
+                        windowMax = 150;
+                    }
+                    guiW = gui.add(guiFormatParams, 'windowSize').min(1).max(windowMax).step(1);
+                    guiV = gui.add(guiFormatParams, 'video', data.format2titles[format]);
+                    addFinishChangeHandlers(guiW, guiV);
+
+                    // Get new predictions
+                    getUpdatedPreds(guiFormatParams.video, guiFormatParams.windowSize); }
+                );
+                function addFinishChangeHandlers(guiW, guiV) {
+                    guiW.onFinishChange(function(windowSize) {
+                        var title = datgui.oneVideo.format == 'film' ? datgui.oneVideo.films.video : datgui.oneVideo.shorts.video;
+                        getUpdatedPreds(title, windowSize);
+                    });
+                    guiV.onFinishChange(function(title) {
+                        var windowSize = datgui.oneVideo.format == 'film' ? datgui.oneVideo.films.windowSize : datgui.oneVideo.shorts.windowSize;
+                        getUpdatedPreds(title,windowSize);
+                    });
+                }
+                addFinishChangeHandlers(guiW, guiV);
+                guiR.onFinishChange(function() { drawOneVideo(datgui); });
+            }
+
+            /***********************************************************************************************************
+             * Clusters view
+             **********************************************************************************************************/
+            function addClustersGUI() {
+                // Set ranges, initial values
+                var guiFormats = gui.add(datgui.clusters, 'format', ['film', 'short']);
+                var guiK = gui.add(datgui.clusters, 'k', Object.keys(data.clusters));
+            }
+
+
+            /***********************************************************************************************************
+             * Draw initial
+             **********************************************************************************************************/
+            addOneVideoGUI();
+            showImage("../static/videos/" + data.framepaths[0], 256, 256, '');
             drawOneVideo(datgui);
 //            drawCluster(datgui);
 
-            // Handlers
+            /***********************************************************************************************************
+             * Some other handlers (should probably be moved somewhere)
+             **********************************************************************************************************/
             function getUpdatedPreds(title, windowSize) {
                 $.ajax({
                     url: '/api/pred/' + title + '/' + windowSize,
@@ -115,7 +167,7 @@
                 redraw_callback();
             }
             function redraw_callback() {
-                show_image("/static/videos/" + data.framepaths[0], 256, 256, '');
+                showImage("/static/videos/" + data.framepaths[0], 256, 256, '');
                 drawOneVideo(datgui);
             }
         }
@@ -124,9 +176,9 @@
         /***************************************************************************************************************
         * Utility functions
         ***************************************************************************************************************/
-        function show_image(src, width, height, alt) {
+        function showImage(src, width, height, alt) {
             var frameElement = document.getElementById("frame");
-            if (frameElement.firstChild) {      // if element already exists
+            if (frameElement.firstChild) {      // if image element already exists
                 frameElement.firstChild.src = src;
             } else {                            // make element and append to DOM
                 var img = document.createElement("img");
@@ -136,6 +188,9 @@
                 img.alt = alt;
                 frameElement.appendChild(img);
             }
+        }
+        function removeFrame() {
+            $('img').remove();
         }
 
         /***************************************************************************************************************
@@ -196,7 +251,7 @@
                           autoSkipPadding: 50
                         }
                     }],
-                    yAxes: datgui.dynamicRange ? [] : [{   // Y-axis from 0 to 1
+                    yAxes: datgui.oneVideo.dynamicRange ? [] : [{   // Y-axis from 0 to 1
                         ticks: {
                             min: 0.0,
                             max: 1.0
@@ -207,7 +262,7 @@
                     onHover: function (e) {
                         if (e[0]) {
                             var frameIdx = e[0]._index;
-                            show_image("../static/videos/" + data.framepaths[frameIdx], 256, 256, '');
+                            showImage("../static/videos/" + data.framepaths[frameIdx], 256, 256, '');
                         }
                     },
                     mode: 'index',
@@ -219,10 +274,10 @@
             };
 
             var ctx = $("#chart");
-            if (myLineChart) {
-                myLineChart.destroy();
+            if (chart) {
+                chart.destroy();
             }
-            myLineChart = new Chart(ctx, {
+            chart = new Chart(ctx, {
                 type: 'line',
                 data: chartData,
                 options: options
@@ -232,37 +287,48 @@
         /***************************************************************************************************************
         * Draw chart for cluster view
         ***************************************************************************************************************/
-        function drawCluster(datgui) {
-
-
+        function drawClusters(datgui) {
             // Get dataset
             // Each object in dataset array corresponds to one line
             var dataset = [];
-            for (var i = 0; i < data.cluster.length; i++) {
+            for (var i = 0; i < data.clusters[datgui.clusters.k].length; i++) {
+                // TODO: should hardcode color palettes for n colors
+                // Need to find a tool (or just write one) that generate palette given n colors
+                // Ideally, palette expands naturally as n increases, i.e. n=3 -> RGB, and then more 'complex' colors with greater n
+                var rgb = hexToRGB(getRandomHexColor());
+                var rgba = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",0.75)";
                 dataset.push({
                     label: i,
-                    borderWidth: 0.1,
-                    data: data.cluster[i],
+                    data: data.clusters[datgui.clusters.k][i],
                     borderWidth: 1,
-                    fill: false,
-                    borderColor: getRandomColor()
+                    borderColor: rgba,
+                    backgroundColor: rgba,
+                    fill: false
                 });
             }
             var labels = [];
-            for (var i = 0; i < data.cluster[0].length; i++) {
+            for (var i = 0; i < data.clusters[datgui.clusters.k][0].length; i++) {
                 labels.push(i);
             }
             var chartData = {
                 labels: labels,
                 datasets: dataset
             };
-            function getRandomColor() {
+            function getRandomHexColor() {
                 var letters = '0123456789ABCDEF';
                 var color = '#';
                 for (var i = 0; i < 6; i++ ) {
                     color += letters[Math.floor(Math.random() * 16)];
                 }
                 return color;
+            }
+            function hexToRGB(hex) {
+                var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                return result ? {
+                    r: parseInt(result[1], 16),
+                    g: parseInt(result[2], 16),
+                    b: parseInt(result[3], 16)
+                } : null;
             }
 
             // Options for chartjs
@@ -290,11 +356,11 @@
                 }
             };
 
-            var ctx = $("#clusterChart");
-//            if (clusterChart) {
-//                clusterChart.destroy();
-//            }
-            clusterChart = new Chart(ctx, {
+            var ctx = $("#chart");
+            if (chart) {
+                chart.destroy();
+            }
+            chart = new Chart(ctx, {
                     type: 'line',
                     data: chartData,
                     options: options
