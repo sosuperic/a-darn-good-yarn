@@ -10,7 +10,9 @@ from flask import Flask, Response, request, render_template
 
 from shape import app
 from core.predictions.utils import smooth
+from core.utils.utils import get_credits_idx
 
+PRED_FN = 'sent_biclass_19.csv'
 VIDEOS_PATH = 'shape/static/videos/'
 OUTPUTS_PATH = 'shape/outputs/'
 
@@ -51,14 +53,32 @@ def get_all_vidpaths_with_preds():
             vidpaths.append(root)
     return vidpaths
 
-def get_cur_vid_framepaths():
-    global cur_vid_framepaths, cur_title
+def get_cur_vid_df_and_framepaths(cur_title):
+    """
+    Return df and list of framepaths
+    """
+    global title2vidpath, cur_pd_df, cur_vid_framepaths
+
+    vidpath = title2vidpath[cur_title]
+
+    # Dataframe
+    cur_pd_df = pd.read_csv(os.path.join(title2vidpath[cur_title], 'preds', PRED_FN))
+
+    # Framepaths
+    # TODO: deprecate this messge: full paths to relative paths because js has relative path starting from videos/
     cur_vid_framepaths = [f for f in os.listdir(os.path.join(title2vidpath[cur_title], 'frames')) if \
             not f.startswith('.')]
     cur_vid_framepaths = [os.path.join(title2vidpath[cur_title].split(VIDEOS_PATH)[1], 'frames', f) for \
         f in cur_vid_framepaths]
     cur_vid_framepaths = natsorted(cur_vid_framepaths)
-    return cur_vid_framepaths
+
+    # Ignore credits
+    credit_idx = get_credits_idx(vidpath)
+    if credit_idx:
+        cur_pd_df = cur_pd_df[:credit_idx]
+        cur_vid_framepaths = cur_vid_framepaths[:credit_idx]
+
+    return cur_pd_df, cur_vid_framepaths
 
 def setup_initial_data():
     """
@@ -68,6 +88,7 @@ def setup_initial_data():
     global title2vidpath, format2titles, title2format, \
         cur_format, cur_title, cur_pd_df, cur_vid_framepaths
 
+    # Set global variables reltaed to *all* videos
     vidpaths = get_all_vidpaths_with_preds()
     format2titles = defaultdict(list)
     for vp in vidpaths:
@@ -82,14 +103,13 @@ def setup_initial_data():
     for format, titles in format2titles.items():
         print '{}: {}'.format(format, len(titles))
 
-    # Get information for first video to show
+    # Get information for *first* video to show
     # cur_format = format2titles.keys()[0]
     cur_format = 'film'
     cur_title = format2titles[cur_format][0]
-    cur_pd_df = pd.read_csv(os.path.join(title2vidpath[cur_title], 'preds', 'sent_biclass.csv'))
-    cur_vid_framepaths = get_cur_vid_framepaths()   # full paths to relative paths because js has relative path starting from videos/
+    cur_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
 
-    print 'done'
+    print 'Setup done'
 
 def get_cluster_data():
     with open(os.path.join(OUTPUTS_PATH, 'cluster/data', 'centroids_nALL-k5-ds3.pkl'), 'r') as f:
@@ -127,8 +147,7 @@ def get_preds_and_frames(title, window_len):
     if title != cur_title:
         cur_format = title2format[title]
         cur_title = title
-        cur_pd_df = pd.read_csv(os.path.join(title2vidpath[cur_title], 'preds', 'sent_biclass_19.csv'))
-        cur_vid_framepaths = get_cur_vid_framepaths()
+        cur_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
 
     preds = get_preds_from_df(cur_pd_df, window_len=int(window_len))
     data = {'preds': preds, 'framepaths': cur_vid_framepaths}

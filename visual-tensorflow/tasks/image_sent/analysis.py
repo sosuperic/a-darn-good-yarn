@@ -14,7 +14,7 @@ import scipy.interpolate as interp
 from core.predictions.ts_cluster import *
 from core.predictions.hierarchical_cluster import *
 from core.predictions.utils import smooth
-from core.utils.utils import setup_logging
+from core.utils.utils import setup_logging, get_credits_idx
 
 OUTPUTS_PATH = 'outputs/cluster/'
 VIDEOS_PATH = 'data/videos'
@@ -93,26 +93,6 @@ class Analysis(object):
     ####################################################################################################################
     # Preprocess data
     ####################################################################################################################
-
-    def get_credits_idx(self, vid_dirpath):
-        """
-        Return index of frame file that credits begins, if it exists
-
-        Parameters
-        ----------
-        vid_dirpath: path to directory with video
-
-        """
-        if os.path.exists(os.path.join(vid_dirpath, 'credits_index.txt')):
-            with open(os.path.join(vid_dirpath, 'credits_index.txt'), 'r') as f:
-                fn = f.readline().strip('\n')
-            frames = natsorted(os.listdir(os.path.join(vid_dirpath, 'frames')))
-            idx = frames.index(fn)
-            # print fn, idx, len(frames)
-            return idx
-        else:
-            return None
-
     def prepare_timeseries(self, root_videos_dirpath, window_size, pred_fn, downsample_rate):
         """
         Create np array of [num_timeseries, max_len]
@@ -150,7 +130,7 @@ class Analysis(object):
                 continue
 
             # Remove predictions for credits frame
-            credits_idx = self.get_credits_idx(vid_dirpath)
+            credits_idx = get_credits_idx(vid_dirpath)
             if credits_idx:
                 # self.logger.info('Credits index: {}'.format(credits_idx))
                 vals = vals[:credits_idx]

@@ -2,6 +2,7 @@
 
 import json
 import logging.config
+from natsort import natsorted
 import os
 import random
 from time import gmtime, strftime
@@ -10,7 +11,7 @@ from tensorflow.python.framework import graph_util
 import yaml
 
 ########################################################################################################################
-# Set up, boilerplate, etc.
+# Neural network - Set up, boilerplate, etc.
 ########################################################################################################################
 def read_yaml(path):
     """Return dict from parsed yaml"""
@@ -318,3 +319,22 @@ def scramble_img(img, block_size):
             img[pixelranges[idx][0][0]:pixelranges[idx][0][1],pixelranges[idx][1][0]:pixelranges[idx][1][1]]
 
     return copy
+
+def get_credits_idx(vid_dirpath):
+    """
+    Return index of frame file that credits begins, if it exists
+
+    Parameters
+    ----------
+    vid_dirpath: path to directory with video
+
+    """
+    if os.path.exists(os.path.join(vid_dirpath, 'credits_index.txt')):
+        with open(os.path.join(vid_dirpath, 'credits_index.txt'), 'r') as f:
+            fn = f.readline().strip('\n')
+        frames = natsorted(os.listdir(os.path.join(vid_dirpath, 'frames')))
+        idx = frames.index(fn)
+        # print fn, idx, len(frames)
+        return idx
+    else:
+        return None
