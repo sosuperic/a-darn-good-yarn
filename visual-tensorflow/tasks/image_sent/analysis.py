@@ -84,8 +84,9 @@ class Analysis(object):
         with open(os.path.join(OUTPUTS_PATH, 'data', 'assignments_{}.pkl'.format(params_str)), 'w') as f:
             pickle.dump(clusterer.assignments, f, protocol=2)
         # Plots
-        for c in clusterer.centroids:
-            plt.plot(c)
+        for i, c in enumerate(clusterer.centroids):
+            plt.plot(c, label=i)
+        plt.legend()
         plt.savefig(os.path.join(OUTPUTS_PATH, 'imgs', 'dtw_{}.png'.format(params_str)))
         plt.gcf().clear()               # clear figure so for next k
 
@@ -160,7 +161,7 @@ class Analysis(object):
             i += 1
 
             # For debugging - to have quick results
-            # if i == 20:
+            # if i == 5:
             #     break
 
         self.logger.info('Interpolating series to maximum series length')
