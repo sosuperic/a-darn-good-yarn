@@ -4,7 +4,9 @@
 # TODO: what to do about shorts, should we filter by length, idk
 
 import argparse
-from natsort import natsorted
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pylab as plt
 import os
 import pandas as pd
 import pickle
@@ -72,9 +74,10 @@ class Analysis(object):
 
         # Save outputs
         self.logger.info('Saving centroids, assignments, figure')
-        params_str = 'dir{}-n{}-k{}-w{}-ds{}-fn{}'.format(
+        params_str = 'dir{}-n{}-k{}-w{}-ds{}-maxnf{}-fn{}'.format(
             os.path.basename(self.root_videos_dirpath),
             self.n, k, self.window_size, self.downsample_rate,
+            self.max_num_frames,
             self.pred_fn[:-4])      # remove .csv
         with open(os.path.join(OUTPUTS_PATH, 'data', 'centroids_{}.pkl'.format(params_str)), 'w') as f:
             pickle.dump(clusterer.centroids, f, protocol=2)
@@ -84,6 +87,7 @@ class Analysis(object):
         for c in clusterer.centroids:
             plt.plot(c)
         plt.savefig(os.path.join(OUTPUTS_PATH, 'imgs', 'dtw_{}.png'.format(params_str)))
+        plt.gcf().clear()               # clear figure so for next k
 
         for centroid_idx, assignments in clusterer.assignments.items():
             self.logger.info('Centroid {}: {} series'.format(centroid_idx, len(assignments)))
@@ -93,7 +97,7 @@ class Analysis(object):
     ####################################################################################################################
     # Preprocess data
     ####################################################################################################################
-    def prepare_timeseries(self, root_videos_dirpath, window_size, pred_fn, downsample_rate):
+    def prepare_timeseries(self, root_videos_dirpath, window_size, pred_fn, downsample_rate, max_num_frames):
         """
         Create np array of [num_timeseries, max_len]
 
@@ -112,11 +116,11 @@ class Analysis(object):
         ts = []
         ts_idx2title = {}
 
-
         vid_dirpaths = self.get_all_vidpaths_with_frames_and_preds(root_videos_dirpath)
         i = 0
 
         self.logger.info('Getting predictions, removing credits preds, smoothing and downsampling')
+
         for vid_dirpath in vid_dirpaths:
             # self.logger.info('Video: {}'.format(vid_dirpath))
 
@@ -124,9 +128,9 @@ class Analysis(object):
             preds_path = os.path.join(vid_dirpath, 'preds', pred_fn)
             vals = pd.read_csv(preds_path).pos.values
 
-            # Skip if window size too big
-            if len(vals) < window_size:
-                self.logger.info('{} length less than: {}'.format(vid_dirpath, window_size))
+            # Skip if predictions are empty (some cases of this in shorts... I think because frames/ is empty)
+            if len(vals) == 0:
+                self.logger.info(u'{} predictions is 0, skipping'.format(unicode(vid_dirpath, 'utf-8')))
                 continue
 
             # Remove predictions for credits frame
@@ -134,6 +138,18 @@ class Analysis(object):
             if credits_idx:
                 # self.logger.info('Credits index: {}'.format(credits_idx))
                 vals = vals[:credits_idx]
+
+            # Skip if window size too big
+            if len(vals) <= window_size:
+                self.logger.info(u'{} length is {}, less than: {}, skipping'.format(
+                    unicode(vid_dirpath, 'utf-8'), len(vals), window_size))  # unicode for titles
+                continue
+
+            # Skip if shorts too long (Only 7 are longer than 30 min: 30.03, 36.00, 41.12, 48.00, 49.60, 53.50))
+            if len(vals) > max_num_frames:
+                self.logger.info(u'{} length greater than max_num_frames ({})'.format(
+                    unicode(vid_dirpath, 'utf-8'), max_num_frames))  # unicode for titles
+                continue
 
             # Smooth and downsample
             smoothed = smooth(vals, window_len=window_size)
@@ -143,8 +159,9 @@ class Analysis(object):
             ts_idx2title[i] = os.path.basename(vid_dirpath)
             i += 1
 
-        # For debugging - to have quick results
-        # ts = ts[0:20]
+            # For debugging - to have quick results
+            # if i == 20:
+            #     break
 
         self.logger.info('Interpolating series to maximum series length')
         # Make all timeseries the same length by going from 0% of video to 100% of video and interpolating in between
@@ -167,9 +184,9 @@ class Analysis(object):
 
         # Save time series data
         self.logger.info('Saving time series data')
-        params_str = 'dir{}-n{}-w{}-ds{}-fn{}'.format(
+        params_str = 'dir{}-n{}-w{}-ds{}-maxnf{}-fn{}'.format(
             os.path.basename(root_videos_dirpath),
-            len(ts), window_size, downsample_rate,
+            len(ts), window_size, downsample_rate, max_num_frames,
             pred_fn[:-4])      # remove .csv
         with open(os.path.join(OUTPUTS_PATH, 'data', 'ts_{}.pkl'.format(params_str)), 'w') as f:
             pickle.dump(ts, f, protocol=2)
@@ -180,8 +197,9 @@ class Analysis(object):
         self.root_videos_dirpath = root_videos_dirpath
         self.n = len(ts)
         self.window_size = window_size
-        self.downsample_rate = downsample_rate
         self.pred_fn = pred_fn
+        self.downsample_rate = downsample_rate
+        self.max_num_frames = max_num_frames
 
         self.logger.info('Number of time series: {}'.format(len(ts)))
         self.logger.info('Time series length (max): {}'.format(ts.shape[1]))
@@ -217,18 +235,21 @@ class Analysis(object):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Cluster time series')
+    parser.add_argument('-m', '--method', dest='method', default='dtw', help='dtw,hierarchical')
     parser.add_argument('--root_videos_dir', dest='root_videos_dir', default=VIDEOS_PATH,
                         help='folder to traverse for predictions')
-    parser.add_argument('--pred_fn', dest='pred_fn', default='sent_biclass_19.csv', help='pred file name')
-    parser.add_argument('-w', dest='window_size', type=int, default=1000, help='window size for smoothing predictions')
-    parser.add_argument('-ds', dest='downsample_rate', type=int, default=3, help='downsample rate')
-    parser.add_argument('-m', '--method', dest='method', default='dtw', help='dtw,hierarchical')
     parser.add_argument('-k', dest='k', default='4', help='list of comma-separated k to evaluate')
+    parser.add_argument('-w', dest='window_size', type=int, default=1000, help='window size for smoothing predictions')
+    parser.add_argument('--pred_fn', dest='pred_fn', default='sent_biclass_19.csv', help='pred file name')
+    parser.add_argument('-ds', dest='downsample_rate', type=int, default=3, help='downsample rate')
+    parser.add_argument('--max_num_frames', dest='max_num_frames', type=int, default=float('inf'),
+                        help='filter out videos with more frames than this. May be used with shorts to filter out'
+                             'the high end (7 out of 1400 shorts are longer than 30 minutes')
     cmdline = parser.parse_args()
 
     analysis = Analysis()
     ts = analysis.prepare_timeseries(cmdline.root_videos_dir, cmdline.window_size,
-                                       cmdline.pred_fn, cmdline.downsample_rate)
+                                       cmdline.pred_fn, cmdline.downsample_rate, cmdline.max_num_frames)
     for k in cmdline.k.split(','):
         print '=' * 100
         analysis.cluster_timeseries(ts, cmdline.method, int(k))
