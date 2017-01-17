@@ -21,6 +21,9 @@ from core.utils.utils import setup_logging, get_credits_idx
 OUTPUTS_PATH = 'outputs/cluster/'
 VIDEOS_PATH = 'data/videos'
 
+CLUSTERS_STR = 'dir{}-n{}-k{}-w{}-ds{}-maxnf{}-fn{}'
+TS_STR = 'dir{}-n{}-w{}-ds{}-maxnf{}-fn{}'
+
 class Analysis(object):
     def __init__(self):
         self.logger = self._get_logger()
@@ -74,7 +77,7 @@ class Analysis(object):
 
         # Save outputs
         self.logger.info('Saving centroids, assignments, figure')
-        params_str = 'dir{}-n{}-k{}-w{}-ds{}-maxnf{}-fn{}'.format(
+        params_str = CLUSTERS_STR.format(
             os.path.basename(self.root_videos_dirpath),
             self.n, k, self.window_size, self.downsample_rate,
             self.max_num_frames,
@@ -185,7 +188,7 @@ class Analysis(object):
 
         # Save time series data
         self.logger.info('Saving time series data')
-        params_str = 'dir{}-n{}-w{}-ds{}-maxnf{}-fn{}'.format(
+        params_str = TS_STR.format(
             os.path.basename(root_videos_dirpath),
             len(ts), window_size, downsample_rate, max_num_frames,
             pred_fn[:-4])      # remove .csv
@@ -206,6 +209,62 @@ class Analysis(object):
         self.logger.info('Time series length (max): {}'.format(ts.shape[1]))
 
         return ts
+
+    ####################################################################################################################
+    # Preprocess data
+    ####################################################################################################################
+    # TODO: this should be a part of ts_cluster (distances are calculated anyway, return on last iteration)
+    def compute_and_save_distance(self, root_videos_dirpath, n, window_size, pred_fn, downsample_rate, max_num_frames, k):
+        """
+
+        Parameters
+        ----------
+        Used to create file name and load saved outputs
+
+        Return
+        ------
+        ts_dists: dict, key is int (centroid_idx), value = dict (key is member_idx, value is distance)
+
+        Notes
+        -----
+        Used to sort members by how close they are to the centroid
+        """
+        self.logger.info('Creating and saving distances')
+        # Create file names
+        ts_str = TS_STR.format(
+            os.path.basename(root_videos_dirpath),
+            n, window_size, downsample_rate, max_num_frames,
+            pred_fn[:-4])      # remove .csv
+        clusters_str = CLUSTERS_STR.format(
+            os.path.basename(root_videos_dirpath),
+            n, k, window_size, downsample_rate,
+            max_num_frames,
+            pred_fn[:-4])      # remove .csv
+
+        # Load
+        ts = pickle.load(open(os.path.join(OUTPUTS_PATH, 'data', 'ts_{}.pkl'.format(ts_str)), 'r'))
+        centroids = pickle.load(open(os.path.join(OUTPUTS_PATH, 'data', 'centroids_{}.pkl'.format(clusters_str)), 'r'))
+        assignments = pickle.load(open(os.path.join(OUTPUTS_PATH, 'data', 'assignments_{}.pkl'.format(clusters_str)), 'r'))
+
+        # Compute
+        ts_dists = {}
+        for c_idx, members in assignments.items():
+            ts_dists[c_idx] = {}
+            i = 0
+            for m_idx in members:
+                ts_dists[c_idx][m_idx] = DTWDistance(centroids[c_idx],
+                                                     ts[m_idx],
+                                                     w=1)  # TODO: this w should be same as one used to cluster originally
+                if i  % 100 == 0:
+                    self.logger.info('{} distances computed'.format(i))
+
+                i += 1
+
+        # Save
+        with open(os.path.join(OUTPUTS_PATH, 'data', 'ts_dists_{}.pkl'.format(clusters_str)), 'w') as f:
+            pickle.dump(ts_dists, f, protocol=2)
+
+        return ts_dists
 
     ####################################################################################################################
     # Helper functions
@@ -236,6 +295,12 @@ class Analysis(object):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Cluster time series')
+
+    # Action to take
+    parser.add_argument('--cluster', dest='cluster', action='store_true', default=False)
+    parser.add_argument('--compute_and_save_distances', dest='compute_and_save_distances', action='store_true', default=False)
+
+    # Cluster
     parser.add_argument('-m', '--method', dest='method', default='dtw', help='dtw,hierarchical')
     parser.add_argument('--root_videos_dir', dest='root_videos_dir', default=VIDEOS_PATH,
                         help='folder to traverse for predictions')
@@ -246,11 +311,24 @@ if __name__ == '__main__':
     parser.add_argument('--max_num_frames', dest='max_num_frames', type=int, default=float('inf'),
                         help='filter out videos with more frames than this. May be used with shorts to filter out'
                              'the high end (7 out of 1400 shorts are longer than 30 minutes')
+
+    # Compute and save distances
+    parser.add_argument('-n', dest='n', default=None, help='n - get from filename')
+
     cmdline = parser.parse_args()
 
     analysis = Analysis()
-    ts = analysis.prepare_timeseries(cmdline.root_videos_dir, cmdline.window_size,
-                                       cmdline.pred_fn, cmdline.downsample_rate, cmdline.max_num_frames)
-    for k in cmdline.k.split(','):
-        print '=' * 100
-        analysis.cluster_timeseries(ts, cmdline.method, int(k))
+    if cmdline.cluster:
+        ts = analysis.prepare_timeseries(cmdline.root_videos_dir, cmdline.window_size,
+                                           cmdline.pred_fn, cmdline.downsample_rate, cmdline.max_num_frames)
+        for k in cmdline.k.split(','):
+            print '=' * 100
+            analysis.cluster_timeseries(ts, cmdline.method, int(k))
+
+    elif cmdline.compute_and_save_distances:
+        for k in cmdline.k.split(','):
+            print '=' * 100
+            print 'k: {}'.format(k)
+            ts_dists = analysis.compute_and_save_distance(cmdline.root_videos_dir, cmdline.n, cmdline.window_size,
+                                                          cmdline.pred_fn, cmdline.downsample_rate,
+                                                          cmdline.max_num_frames, k)
