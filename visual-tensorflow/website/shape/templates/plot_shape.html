@@ -249,12 +249,16 @@
             }
             return downsampled;
         }
+        function openInNewTab(url) {
+            var win = window.open(url, '_blank');
+            // win.focus();
+        }
 
         /***************************************************************************************************************
         * Draw chart for one image view - show images on hover
         ***************************************************************************************************************/
         function drawOneVideo(datgui) {
-            var DOWNSAMPLE_RATE = datgui.clusters.format == 'film' ? 1 : 1; // not downsampling right now
+            var DOWNSAMPLE_RATE = datgui.oneVideo.format == 'film' ? 1 : 1; // not downsampling right now
 
             // Each label is the timestamp hr:min:sec in the video
             function getLabels(data) {
@@ -344,6 +348,26 @@
                 data: chartData,
                 options: options
             });
+
+            // Attach handler to open vimeo for shorts
+            if (datgui.oneVideo.format == 'short') {
+                console.log('attached');
+                openVimeoOnFrameClick();
+            }
+            function openVimeoOnFrameClick() {
+                $("img").click(function(evt){
+                    var title = datgui.oneVideo.shorts.video;
+                    title = title.split('_');
+                    var id = title[title.length - 1];
+                    var url = 'http://vimeo.com/' + id;
+                    openInNewTab(url);
+                });
+                $("img").hover(
+                    function() {
+                        $("#frame").css("cursor", "pointer");
+                    }
+                );
+            }
         }
 
         /***************************************************************************************************************
@@ -351,16 +375,16 @@
         ***************************************************************************************************************/
         function drawClusters(datgui) {
             var COLORS = [
-                [78,179,211],   // blue
-                [252,78,42],    // red
-                [221,52,151],   // magenta
-                [8,64,129],     // dark blue
-                [65,174,118],   // green
-                [128,0,38],     // dark burnt red
-                [250,159,181],  // peach/pink
-                [254,178,76],   // orange / yellow
-                [73,0,106],     // dark violet
-                [0,109,44]      // dark green
+                [78, 179, 211],   // blue
+                [252, 78, 42],    // red
+                [221, 52, 151],   // magenta
+                [8, 64, 129],     // dark blue
+                [65, 174, 118],   // green
+                [128, 0, 38],     // dark burnt red
+                [250, 159, 181],  // peach/pink
+                [254, 178, 76],   // orange / yellow
+                [73, 0, 106],     // dark violet
+                [0, 109, 44]      // dark green
             ];
             var DOWNSAMPLE_RATE = datgui.clusters.format == 'film' ? 15 : 3;
 
@@ -377,15 +401,13 @@
                 }
                 // Add point
                 var rgb = COLORS[i];
-                var opacity = ",0.75)";
-                var rgba = "rgba(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + opacity;
                 dataset.push({
                     label: i,
                     data: downsampleTimeseries(curClusters.centroids[i], DOWNSAMPLE_RATE),
                     borderWidth: 2,
-                    borderColor: rgba,
-                    backgroundColor: rgba,
-                    fill: false
+                    borderColor: getRGBA(rgb[0], rgb[1], rgb[2], 0.75),
+                    backgroundColor: getRGBA(rgb[0], rgb[1], rgb[2], 0.05),
+//                    fill: true
                 });
             }
 
@@ -401,8 +423,7 @@
 
                     var hex = getRandomHexColor();
                     var rgb = hexToRGB(hex);
-                    var opacity = ",0.2)";
-                    var rgba = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + opacity;
+                    var rgba = getRGBA(rgb.r, rgb.g, rgb.b, 0.2);
                     dataset.push({
                         label: title,
                         data: downsampleTimeseries(series, DOWNSAMPLE_RATE),
@@ -431,11 +452,12 @@
             function getRandomHexColor() {
                 var letters = '0123456789ABCDEF';
                 var color = '#';
-                for (var i = 0; i < 6; i++ ) {
+                for (var i = 0; i < 6; i++) {
                     color += letters[Math.floor(Math.random() * 16)];
                 }
                 return color;
             }
+
             function hexToRGB(hex) {
                 var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
                 return result ? {
@@ -443,6 +465,10 @@
                     g: parseInt(result[2], 16),
                     b: parseInt(result[3], 16)
                 } : null;
+            }
+
+            function getRGBA(r, g, b, opacity) {
+                return "rgba(" + r + "," + g + "," + b + "," + opacity + ")";
             }
 
             // Options for chartjs
@@ -453,13 +479,13 @@
                     responsiveAnimationDuration: 0
                 },
                 elements: {   // Don't show individual points on line graph
-                    point:{
+                    point: {
                         radius: 0
                     }
                 },
                 tooltips: {     // tooltip for points on current mouse x-axis position
-                    mode: 'index',
-                    intersect: false
+                    mode: datgui.clusters.focusOnKth == 'all' ? 'index' : 'nearest',
+                    intersect: datgui.clusters.focusOnKth == 'all' ? false : true
                 },
                 scales: {
                     xAxes: [{
@@ -472,6 +498,13 @@
                         }
                     }]
                 },
+                hover: {
+                    onHover: function(e) {
+                        if (datgui.clusters.format == 'short') {
+                            $("#chart").css("cursor", e[0] ? "pointer" : "default");
+                        }
+                    }
+                },
                 animation: {
                     duration: 0
                 }
@@ -482,11 +515,33 @@
                 chart.destroy();
             }
             chart = new Chart(ctx, {
-                    type: 'line',
-                    data: chartData,
-                    options: options
-                });
+                type: 'line',
+                data: chartData,
+                options: options
+            });
+
+            // Attach handler to open vimeo for shorts
+            if (datgui.clusters.format == 'short') {
+                openVimeoOnTimeseriesClick();
             }
+            function openVimeoOnTimeseriesClick() {
+                $("#chart").click(function(evt){
+                    var element = chart.getElementAtEvent(evt);
+                    if (typeof element[0] != 'undefined') {
+                        var title = chart.data.datasets[element[0]._datasetIndex].label;
+                        if (isNotNumeric(title)) {        // skip if accidentally clicked on centroid line
+                            title = title.split('_');
+                            var id = title[title.length - 1];
+                            var url = 'http://vimeo.com/' + id;
+                            openInNewTab(url);
+                        }
+                    }
+                });
+                function isNotNumeric(str) {
+                    return isNaN(parseInt(str));
+                }
+            }
+        }
 
     </script>
 </body>
