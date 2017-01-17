@@ -12,16 +12,29 @@ from shape import app
 from core.predictions.utils import smooth, DTWDistance
 from core.utils.utils import get_credits_idx
 
+###### PATHS
 # PRED_FN = 'sent_biclass_19.csv'
 PRED_FN = 'sent_biclass.csv'
 VIDEOS_PATH = 'shape/static/videos/'
 OUTPUTS_PATH = 'shape/outputs/'
 
-TS_FILMS_FN = 'ts_dirfilms-n441-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
-TS_SHORTS_FN = 'ts_dirshorts-n1323-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
-TS_FILMS_IDX2TITLE_FN = 'ts_idx2title_dirfilms-n441-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
-TS_SHORTS_IDX2TITLE_FN = 'ts_idx2title_dirshorts-n1323-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
+TS_FILMS_FN = 'ts_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
+TS_SHORTS_FN = 'ts_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
+TS_FILMS_IDX2TITLE_FN = 'ts_idx2title_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
+TS_SHORTS_IDX2TITLE_FN = 'ts_idx2title_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
 
+FILMS_CENTROIDS_FN = 'centroids_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
+FILMS_ASSIGNMENTS_FN = 'assignments_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
+TS_DISTS_FILMS_FN = 'ts_dists_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
+SHORTS_CENTROIDS_FN = 'centroids_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
+SHORTS_ASSIGNMENTS_FN = 'assignments_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
+# SHORTS_CENTROIDS_FN = 'centroids_dirshorts-n1323-normMagsFalse-k{}-w30-ds2-maxnf1800-fnsent_biclass_19.pkl'
+# SHORTS_ASSIGNMENTS_FN = 'assignments_dirshorts-n1323-normMagsFalse-k{}-w30-ds2-maxnf1800-fnsent_biclass_19.pkl'
+TS_DISTS_SHORTS_FN  = 'ts_dists_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
+
+# TODO: load distances for TS_shorts
+
+###### GLOBALS
 title2vidpath = {}
 format2titles = defaultdict(list)
 title2format = {}
@@ -29,6 +42,8 @@ title2format = {}
 clusters = {}
 ts = {}
 ts_idx2title = {}
+ts_dists = {}
+fmt2k2c2top_ts_idx = {}
 
 # Used for initial curve to display
 cur_format = None
@@ -110,23 +125,36 @@ def setup_initial_data():
         title2vidpath[t] = vp
     for format, titles in format2titles.items():
         format2titles[format] = sorted(titles)
-
-    for format, titles in format2titles.items():
         print '{}: {}'.format(format, len(titles))
 
+    print format2titles
+    print '@@@@@@@@@@@@@'
+
 
     ####################################################################################################################
-    # Set cluster related data
+    # Set time series, cluster related data
     ####################################################################################################################
-    global clusters
+    # All time series
+    global ts, ts_idx2title
+    ts['films'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FILMS_FN), 'r'))
+    ts['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_FN), 'r'))
+    # make it serialiable
+    ts['films'] = [list(arr) for arr in ts['films']]
+    ts['shorts'] = [list(arr) for arr in ts['shorts']]
 
+    ts_idx2title['films'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FILMS_IDX2TITLE_FN), 'r'))
+    ts_idx2title['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_IDX2TITLE_FN), 'r'))
+
+
+
+    global clusters, ts_dists
     # Films
     clusters['films'] = {}
-    ks = [3, 4, 5]
+    ts_dists['films'] = {}
+    ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     for k in ks:
-        # TODO: move these to top of file
-        centroids_fn = 'centroids_dirfilms-n441-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'.format(k)
-        assignments_fn = 'assignments_dirfilms-n441-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'.format(k)
+        centroids_fn = FILMS_CENTROIDS_FN.format(k)
+        assignments_fn = FILMS_ASSIGNMENTS_FN.format(k)
         centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
         assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
         if os.path.exists(centroids_path) and os.path.exists(assignments_path):
@@ -143,10 +171,11 @@ def setup_initial_data():
 
     # Shorts
     clusters['shorts'] = {}
+    ts_dists['shorts'] = {}
     ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     for k in ks:
-        centroids_fn = 'centroids_dirshorts-n1323-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'.format(k)
-        assignments_fn = 'assignments_dirshorts-n1323-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'.format(k)
+        centroids_fn = SHORTS_CENTROIDS_FN.format(k)
+        assignments_fn = SHORTS_ASSIGNMENTS_FN.format(k)
         centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
         assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
         if os.path.exists(centroids_path) and os.path.exists(assignments_path):
@@ -158,12 +187,20 @@ def setup_initial_data():
         else:
             print 'Centroids/assignments path doesnt exist:\n{}\n{}'.format(centroids_path, assignments_path)
 
-    # All time series
-    global ts, ts_idx2title
-    # ts['films'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FILMS_FN), 'r'))
-    # ts['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_FN), 'r'))
-    ts_idx2title['films'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FILMS_IDX2TITLE_FN), 'r'))
-    ts_idx2title['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_IDX2TITLE_FN), 'r'))
+
+        # # TS Distances to centroids
+        # ts_dists_fn = TS_DISTS_SHORTS_FN.format(k)
+        # ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
+        # if os.path.exists(ts_dists_path):
+        #     with open(ts_dists_path) as f:
+        #         dists = pickle.load(f)      # key is ts_index, value is distance to its centroid
+        #         print dists
+        #     # TODO: sort dists
+        #     for ts_index, dist in dists.items():
+        #
+        #     ts_dists['shorts'][str(k)] = dists
+        # else:
+        #     print 'ts_dists path doesnt exist:\n{}'.format(ts_dists_path)
 
     print 'Setup done'
 
@@ -188,7 +225,7 @@ def shape():
     """
     global format2titles, \
         cur_format, cur_title, cur_pd_df, cur_vid_framepaths, \
-        clusters, ts_idx2title
+        clusters, ts_idx2title, ts
 
     # Get information for *first* video to show
     # cur_format = format2titles.keys()[0]
@@ -200,7 +237,8 @@ def shape():
     data = {'format2titles': format2titles,
             'framepaths': cur_vid_framepaths, 'preds': cur_vid_preds,
             'clusters': clusters,
-            'ts_idx2title': ts_idx2title}
+            'ts_idx2title': ts_idx2title,
+            'ts': ts}
 
     return render_template('plot_shape.html', data=json.dumps(data))
 

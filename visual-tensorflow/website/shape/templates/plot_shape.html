@@ -12,8 +12,10 @@
 
 <body>
     <div id="plot"></div>
-    <div style="max-width:800px; max-height:400px">
-        <canvas id="chart" width="800" height="400"></canvas>
+    <div width="800" height="400">
+        <div style="max-width:800px; max-height:400px">
+            <canvas id="chart" width="100%"></canvas>
+        </div>
     </div>
     <div style="padding-left:275px;padding-top:50px" id="frame"></div>
 
@@ -47,6 +49,7 @@
             // Clusters View - intialize
             var clusters = {};
             clusters.format = 'film';
+            clusters.dynamicRange = false;
             clusters.k = Object.keys(data.clusters.films)[0];
             clusters.focusOnKth = 'all';
             this.clusters = clusters;
@@ -135,14 +138,15 @@
             function addClustersGUI() {
                 // Set ranges, initial values
                 var guiFormats = gui.add(datgui.clusters, 'format', ['film', 'short']);
+                var guiR = gui.add(datgui.clusters, 'dynamicRange');
                 var formatKClusters = data.clusters[datgui.clusters.format + 's'];
                 var guiK = gui.add(datgui.clusters, 'k', Object.keys(formatKClusters));
                 var guiFocusOnKth = gui.add(datgui.clusters, 'focusOnKth', ['all'].concat(getKIndices(datgui.clusters.k)));
                 // Handlers
                 guiFormats.onFinishChange(function(format) {
                     // Remove k-related controllers to get list of available k's for that format
-                    gui.__controllers[2].remove();
-                    gui.__controllers[2].remove();
+                    gui.__controllers[4].remove();
+                    gui.__controllers[3].remove();
                     var formatKClusters;
                     if (format == 'film') {
                         formatKClusters = data.clusters[datgui.clusters.format + 's'];
@@ -161,7 +165,7 @@
                 function addFinishChangeHandlers(guiK, guiFocusOnKth) {
                     guiK.onFinishChange(function() {
                         // Remove and add focusOnKth to have proper range
-                        gui.__controllers[3].remove();
+                        gui.__controllers[4].remove();
                         datgui.clusters.focusOnKth =  'all';
                         guiFocusOnKth = gui.add(datgui.clusters, 'focusOnKth', ['all'].concat(getKIndices(datgui.clusters.k)));
 
@@ -171,6 +175,7 @@
                     guiFocusOnKth.onFinishChange(function() { drawClusters(datgui); });
                 }
                 addFinishChangeHandlers(guiK, guiFocusOnKth);
+                guiR.onFinishChange(function() { drawClusters(datgui); });
 
                 // Return array [0,k-1] (i.e. indices of centroids)
                 function getKIndices(k) {
@@ -333,50 +338,72 @@
         * Draw chart for cluster view
         ***************************************************************************************************************/
         function drawClusters(datgui) {
-            // TODO: Display assignments if focusOnKth
-            if (datgui.clusters.focusOnKth != 'all') {
-                var kthClustering = data.clusters[datgui.clusters.format + 's'][datgui.clusters.k];
-                var focus = kthClustering.assignments[datgui.clusters.focusOnKth];
-                for (var i = 0; i < focus.length; i++) {
-                    console.log(data.ts_idx2title[datgui.clusters.format + 's'][focus[i]]);
-                }
-            }
+            var COLORS = [
+                [78,179,211],   // blue
+                [252,78,42],    // red
+                [221,52,151],   // magenta
+                [8,64,129],     // dark blue
+                [128,0,38],     // dark burnt red
+                [250,159,181],  // peach/pink
+                [65,174,118],   // green
+                [254,178,76],   // orange / yellow
+                [73,0,106],     // dark violet
+                [0,109,44]      // dark green
+            ];
 
             // Get dataset
             // Each object in dataset array corresponds to one line
             var dataset = [];
             var curClusters = data.clusters[datgui.clusters.format + 's'][datgui.clusters.k];   // film -> films
             for (var i = 0; i < curClusters.centroids.length; i++) {
-                // TODO: should hardcode color palettes for n colors
-                // Need to find a tool (or just write one) that generate palette given n colors
-                // Ideally, palette expands naturally as n increases, i.e. n=3 -> RGB, and then more 'complex' colors with greater n
-                var rgb = hexToRGB(getRandomHexColor());
-
-                // Change opacity if centroid is in focus
-                var opacity;
-                var fill = false;
-                if (datgui.clusters.focusOnKth == 'all') {
-                    opacity = ",0.75)";
-                } else {
-                    if (i == datgui.clusters.focusOnKth) {
-                        opacity = ",0.75)";
-                        fill = true;
-                    } else {
-                        opacity = ",0.1)";
+                // Skip if focusOnKth but not focusing on this centroid
+                if (datgui.clusters.focusOnKth != 'all') {
+                    if (i != datgui.clusters.focusOnKth) {
+                        continue;
                     }
                 }
-
-
-                var rgba = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + opacity;
+                // Add point
+                var rgb = COLORS[i];
+                var opacity = ",0.75)";
+                var rgba = "rgba(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + opacity;
                 dataset.push({
                     label: i,
                     data: curClusters.centroids[i],
-                    borderWidth: 3,
+                    borderWidth: 2,
                     borderColor: rgba,
                     backgroundColor: rgba,
-//                    fill: fill
                     fill: false
                 });
+            }
+
+            // Display assignments if focusOnKth
+            // TODO: show closest points
+            if (datgui.clusters.focusOnKth != 'all') {
+                var kthClustering = data.clusters[datgui.clusters.format + 's'][datgui.clusters.k];
+                var assignments = kthClustering.assignments[datgui.clusters.focusOnKth];
+                for (var i = 0; i < assignments.length; i++) {
+                    var title = data.ts_idx2title[datgui.clusters.format + 's'][assignments[i]];
+                    var series = data.ts[datgui.clusters.format + 's'][assignments[i]];
+                    console.log(title);
+
+                    var hex = getRandomHexColor();
+                    var rgb = hexToRGB(hex);
+                    var opacity = ",0.2)";
+                    var rgba = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + opacity;
+                    dataset.push({
+                        label: title,
+                        data: series,
+                        borderWidth: 1,
+                        borderColor: rgba,
+                        backgroundColor: rgba,
+                        fill: false
+                    });
+
+                    // Too many lines!
+                    if (i == 10) {
+                        break;
+                    }
+                }
             }
             var labels = [];
             for (var i = 0; i < curClusters.centroids[0].length; i++) {
@@ -386,6 +413,8 @@
                 labels: labels,
                 datasets: dataset
             };
+
+            // Utility to generator colors
             function getRandomHexColor() {
                 var letters = '0123456789ABCDEF';
                 var color = '#';
@@ -406,8 +435,9 @@
             // Options for chartjs
             var options = {
                 global: {
-                    responsive: true,
-                    maintainAspectRatio: false
+                    responsive: false,
+                    maintainAspectRatio: false,
+                    responsiveAnimationDuration: 0
                 },
                 elements: {   // Don't show individual points on line graph
                     point:{
@@ -421,6 +451,12 @@
                 scales: {
                     xAxes: [{
                         display: false
+                    }],
+                    yAxes: datgui.clusters.dynamicRange ? [] : [{   // Y-axis from 0 to 1
+                        ticks: {
+                            min: 0.0,
+                            max: 1.0
+                        }
                     }]
                 },
                 animation: {
