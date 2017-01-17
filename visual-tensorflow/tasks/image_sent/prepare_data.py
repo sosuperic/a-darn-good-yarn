@@ -11,6 +11,7 @@ import pickle
 from PIL import Image
 from pprint import pprint
 import re
+import sqlite3
 import subprocess
 import tensorflow as tf
 import urllib
@@ -56,6 +57,11 @@ VIDEOS_PATH = 'data/videos'
 
 # CMU Movie Summary path
 CMU_PATH = 'data/CMU_movie_summary/MovieSummaries/'
+
+VIDEODB = 'data/db/VideoPath.db'
+VID_EXTS = ['webm', 'mkv', 'flv', 'vob', 'ogv', 'ogg', 'drc', 'gif', 'gifv', 'mng', 'avi', 'mov', 'qt', 'wmv',
+                'yuv', 'rm', 'rmvb', 'asf', 'amv', 'mp4', 'm4p', 'm4v', 'mpg', 'mp2', 'mpeg', 'mpe', 'mpv', 'm2v',
+                'm4v', 'svi', '3gp', '3g2', 'mxf', 'roq', 'nsv', 'flv', 'f4v', 'f4p', 'f4a', 'f4b']
 
 ########################################################################################################################
 # Sentibank
@@ -601,9 +607,7 @@ def save_video_frames(vids_dir):
     ----------
     vids_dir: directory within VIDEOS_PATH that contains sub-directories, each which may contain a movie
     """
-    vid_exts = ['webm', 'mkv', 'flv', 'vob', 'ogv', 'ogg', 'drc', 'gif', 'gifv', 'mng', 'avi', 'mov', 'qt', 'wmv',
-                'yuv', 'rm', 'rmvb', 'asf', 'amv', 'mp4', 'm4p', 'm4v', 'mpg', 'mp2', 'mpeg', 'mpe', 'mpv', 'm2v',
-                'm4v', 'svi', '3gp', '3g2', 'mxf', 'roq', 'nsv', 'flv', 'f4v', 'f4p', 'f4a', 'f4b']
+
     # vid_exts = ['mp4', 'avi']
     mr = MovieReader()
 
@@ -629,7 +633,7 @@ def save_video_frames(vids_dir):
                 except Exception as e:
                     print 'Removed sample file {} for {}'.format(f, vid_name)
         for f in files:
-            for ext in vid_exts:
+            for ext in VID_EXTS:
                 if f.endswith(ext):
                     movie_file = f
                     ext2count[ext] += 1
@@ -779,6 +783,82 @@ def match_movie_metadata(vids_dir):
 
     print i, len(vid_dirs)
 
+
+def create_videopath_db():
+    """
+    Create sqllite db storing information about video paths, formats, frames, etc.
+    """
+    def get_movie_fn_if_exists(files):
+        for f in files:
+            if 'sample' in f.lower():
+                continue
+            for ext in VID_EXTS:
+                if f.endswith(ext):
+                    return f
+        return None
+
+    def get_dataset_name_from_dir(dir):
+        # MovieQA_full_movies -> MovieQA
+        if dir == 'MovieQA_full_movies':
+            return 'MovieQA'
+        elif dir == 'M-VAD_full_movies':
+            return 'M-VAD'
+        else:
+            return dir
+
+    # Delete and recreate database
+    if os.path.exists(VIDEODB):
+        os.remove(VIDEODB)
+    conn = sqlite3.connect(VIDEODB)
+    conn.execute('CREATE TABLE VideoPath('
+                 'category TEXT,'
+                 'title TEXT,'
+                 'datasets TEXT,'
+                 'dirpath TEXT,'
+                 'movie_fn TEXT,'
+                 'ext TEXT,'
+                 'has_frames INTEGER,'
+                 'num_frames INTEGER)')
+
+    # Find all directories with movies
+    with conn:
+        cur = conn.cursor()
+        for root, dirs, files in os.walk(VIDEOS_PATH):
+            movie_fn = get_movie_fn_if_exists(files)
+            if movie_fn:
+                # root: data/videos/films/MovieQA_full_movies/Yes Man (2008)
+                title = os.path.basename(root)
+                category = root.split(VIDEOS_PATH)[1].split('/')[1]
+                dirpath = root
+                # print root
+                datasets = get_dataset_name_from_dir(root.split(category)[1].split('/')[1])
+                ext = movie_fn.split('.')[-1]
+                has_frames = int(('frames' in dirs) and (len(os.listdir(os.path.join(root, 'frames'))) > 0))
+                num_frames = len(os.listdir(os.path.join(root, 'frames'))) if has_frames else 0
+
+                print category, title, datasets, dirpath, movie_fn, ext, has_frames, num_frames
+
+                cur.execute("INSERT INTO VideoPath VALUES(?, ?, ?, ?, ?, ?, ?, ?)", (
+                    category,
+                    title.decode('utf8'),
+                    datasets,
+                    dirpath.decode('utf8'),
+                    movie_fn.decode('utf8'),
+                    ext,
+                    has_frames,
+                    num_frames
+                ))
+
+    # TODO and note on datasets field (not high priority, as datasets not being used right now)
+    # 1) datasets is meant to track which existing datasets movie is also a part of.
+    # For instance, the bulk of the movies are from the MovieQA and M-VAD datasets.
+    # These were chosen in the case we wanted to do further analysis on these movies -- these datasets
+    # provide extra DVS descriptions and metadata. (They also include large chunks of the movie, but not the full
+    # movie, which is why they were downloaded in full, and hence the name of the directories, e.g. MovieQA_full_movies)
+    # 2) However, there is some overlap between these datasets (as well as other datasets, such as CMU_movie_tropes).
+    # datasets is supposed to be a comma-separated list of these datasets. In order to make it complete, I should
+    # match the movies from the txt files containing the list of movies and upsert into the table.
+
 if __name__ == '__main__':
 
     # Set up commmand line arguments
@@ -801,6 +881,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_credits_index_overwrite', dest='save_credits_index_overwrite', default=False,
                         action='store_true', help='overwrite credits_index.txt files')
     parser.add_argument('--match_movie_metadata', dest='match_video_metadata', action='store_true')
+    parser.add_argument('--create_videopath_db', dest='create_videopath_db', action='store_true')
     parser.add_argument('--vids_dir', dest='vids_dir', default=None,
                         help='folder that contains dirs (one movie each), e.g. films/MovieQA_full_movies')
 
@@ -836,5 +917,7 @@ if __name__ == '__main__':
         convert_avis_to_mp4s(cmdline.vids_dir)
     elif cmdline.save_credits_index:
         save_credits_index(cmdline.vids_dir, overwrite_files=cmdline.save_credits_index_overwrite)
+    elif cmdline.create_videopath_db:
+        create_videopath_db()
     elif cmdline.match_video_metadata:
         match_movie_metadata(cmdline.vids_dir)
