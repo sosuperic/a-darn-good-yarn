@@ -241,11 +241,21 @@
         function removeFrame() {
             $('img').remove();
         }
+        // Downsample time series in order to prevent aliasing
+        function downsampleTimeseries(timeseries, downsample_rate) {
+            var downsampled = [];
+            for (var i = 0; i < timeseries.length; i += downsample_rate) {
+                downsampled.push(timeseries[i]);
+            }
+            return downsampled;
+        }
 
         /***************************************************************************************************************
         * Draw chart for one image view - show images on hover
         ***************************************************************************************************************/
         function drawOneVideo(datgui) {
+            var DOWNSAMPLE_RATE = datgui.clusters.format == 'film' ? 1 : 1; // not downsampling right now
+
             // Each label is the timestamp hr:min:sec in the video
             function getLabels(data) {
                 var numSec = data.length;
@@ -268,12 +278,13 @@
                 dataset.push({
                     label: key,
                     borderWidth: 0.1,
-                    data: data.preds[key],
+                    data: downsampleTimeseries(data.preds[key], DOWNSAMPLE_RATE),
                     backgroundColor: "rgba(15, 171, 182, 0.75)"
                 })
             }
             // Use first set
             var labels = getLabels(data.preds[Object.keys(data.preds)[0]]);
+            labels = downsampleTimeseries(labels, DOWNSAMPLE_RATE);
             var chartData = {
                 labels: labels,
                 datasets: dataset
@@ -311,7 +322,8 @@
                     onHover: function (e) {
                         if (e[0]) {
                             var frameIdx = e[0]._index;
-                            showImage("../static/videos/" + data.framepaths[frameIdx], 256, 256, '');
+                            showImage("../static/videos/" + data.framepaths[frameIdx * DOWNSAMPLE_RATE]
+                                    , 256, 256, '');
                         }
                     },
                     mode: 'index',
@@ -343,13 +355,14 @@
                 [252,78,42],    // red
                 [221,52,151],   // magenta
                 [8,64,129],     // dark blue
+                [65,174,118],   // green
                 [128,0,38],     // dark burnt red
                 [250,159,181],  // peach/pink
-                [65,174,118],   // green
                 [254,178,76],   // orange / yellow
                 [73,0,106],     // dark violet
                 [0,109,44]      // dark green
             ];
+            var DOWNSAMPLE_RATE = datgui.clusters.format == 'film' ? 15 : 3;
 
             // Get dataset
             // Each object in dataset array corresponds to one line
@@ -368,7 +381,7 @@
                 var rgba = "rgba(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + opacity;
                 dataset.push({
                     label: i,
-                    data: curClusters.centroids[i],
+                    data: downsampleTimeseries(curClusters.centroids[i], DOWNSAMPLE_RATE),
                     borderWidth: 2,
                     borderColor: rgba,
                     backgroundColor: rgba,
@@ -392,7 +405,7 @@
                     var rgba = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + opacity;
                     dataset.push({
                         label: title,
-                        data: series,
+                        data: downsampleTimeseries(series, DOWNSAMPLE_RATE),
                         borderWidth: 1,
                         borderColor: rgba,
                         backgroundColor: rgba,
@@ -406,7 +419,7 @@
                 }
             }
             var labels = [];
-            for (var i = 0; i < curClusters.centroids[0].length; i++) {
+            for (var i = 0; i < dataset[0].data.length; i++) {
                 labels.push(i);
             }
             var chartData = {
