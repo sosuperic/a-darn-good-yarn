@@ -12,8 +12,8 @@
 
 <body>
     <div id="plot"></div>
-    <div style="max-width:800px; max-height:500px">
-        <canvas id="chart" width="800" height="500"></canvas>
+    <div style="max-width:800px; max-height:400px">
+        <canvas id="chart" width="800" height="400"></canvas>
     </div>
     <div style="padding-left:275px;padding-top:50px" id="frame"></div>
 
@@ -48,6 +48,7 @@
             var clusters = {};
             clusters.format = 'film';
             clusters.k = Object.keys(data.clusters.films)[0];
+            clusters.focusOnKth = 'all';
             this.clusters = clusters;
         };
 
@@ -56,7 +57,7 @@
         ***************************************************************************************************************/
         window.onload = function() {
             var datgui = new DatGui();
-            var gui = new dat.GUI();
+            var gui = new dat.GUI({width: 400});
 
             /***********************************************************************************************************
              * Manage views
@@ -136,25 +137,49 @@
                 var guiFormats = gui.add(datgui.clusters, 'format', ['film', 'short']);
                 var formatKClusters = data.clusters[datgui.clusters.format + 's'];
                 var guiK = gui.add(datgui.clusters, 'k', Object.keys(formatKClusters));
-
+                var guiFocusOnKth = gui.add(datgui.clusters, 'focusOnKth', ['all'].concat(getKIndices(datgui.clusters.k)));
                 // Handlers
                 guiFormats.onFinishChange(function(format) {
-                    // Remove k handler to get list of available k's for that format
+                    // Remove k-related controllers to get list of available k's for that format
+                    gui.__controllers[2].remove();
                     gui.__controllers[2].remove();
                     var formatKClusters;
                     if (format == 'film') {
                         formatKClusters = data.clusters[datgui.clusters.format + 's'];
+
                     } else if (format == 'short') {
                         formatKClusters = data.clusters[datgui.clusters.format + 's'];
                     }
+                    datgui.clusters.k =  Object.keys(formatKClusters)[0];
                     guiK = gui.add(datgui.clusters, 'k', Object.keys(formatKClusters));
+                    datgui.clusters.focusOnKth =  'all';
+                    guiFocusOnKth = gui.add(datgui.clusters, 'focusOnKth', ['all'].concat(getKIndices(datgui.clusters.k)));
+
+                    addFinishChangeHandlers(guiK, guiFocusOnKth);
                     drawClusters(datgui);
-                    addFinishChangeHandlers(guiK);
                 });
-                function addFinishChangeHandlers(guiK) {
-                    guiK.onFinishChange(function() { drawClusters(datgui); });
+                function addFinishChangeHandlers(guiK, guiFocusOnKth) {
+                    guiK.onFinishChange(function() {
+                        // Remove and add focusOnKth to have proper range
+                        gui.__controllers[3].remove();
+                        datgui.clusters.focusOnKth =  'all';
+                        guiFocusOnKth = gui.add(datgui.clusters, 'focusOnKth', ['all'].concat(getKIndices(datgui.clusters.k)));
+
+                        addFinishChangeHandlers(guiK, guiFocusOnKth);
+                        drawClusters(datgui);
+                    });
+                    guiFocusOnKth.onFinishChange(function() { drawClusters(datgui); });
                 }
-                addFinishChangeHandlers(guiK);
+                addFinishChangeHandlers(guiK, guiFocusOnKth);
+
+                // Return array [0,k-1] (i.e. indices of centroids)
+                function getKIndices(k) {
+                    var indices = [];
+                    for (var i = 0; i < k; i++) {
+                        indices.push(i);
+                    }
+                    return indices
+                }
             }
 
 
@@ -164,7 +189,6 @@
             addOneVideoGUI();
             showImage("../static/videos/" + data.framepaths[0], 256, 256, '');
             drawOneVideo(datgui);
-//            drawClusters(datgui);
 
             /***********************************************************************************************************
              * Some other handlers (should probably be moved somewhere)
@@ -297,6 +321,7 @@
             if (chart) {
                 chart.destroy();
             }
+
             chart = new Chart(ctx, {
                 type: 'line',
                 data: chartData,
@@ -308,6 +333,15 @@
         * Draw chart for cluster view
         ***************************************************************************************************************/
         function drawClusters(datgui) {
+            // TODO: Display assignments if focusOnKth
+            if (datgui.clusters.focusOnKth != 'all') {
+                var kthClustering = data.clusters[datgui.clusters.format + 's'][datgui.clusters.k];
+                var focus = kthClustering.assignments[datgui.clusters.focusOnKth];
+                for (var i = 0; i < focus.length; i++) {
+                    console.log(data.ts_idx2title[datgui.clusters.format + 's'][focus[i]]);
+                }
+            }
+
             // Get dataset
             // Each object in dataset array corresponds to one line
             var dataset = [];
@@ -317,13 +351,30 @@
                 // Need to find a tool (or just write one) that generate palette given n colors
                 // Ideally, palette expands naturally as n increases, i.e. n=3 -> RGB, and then more 'complex' colors with greater n
                 var rgb = hexToRGB(getRandomHexColor());
-                var rgba = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",0.75)";
+
+                // Change opacity if centroid is in focus
+                var opacity;
+                var fill = false;
+                if (datgui.clusters.focusOnKth == 'all') {
+                    opacity = ",0.75)";
+                } else {
+                    if (i == datgui.clusters.focusOnKth) {
+                        opacity = ",0.75)";
+                        fill = true;
+                    } else {
+                        opacity = ",0.1)";
+                    }
+                }
+
+
+                var rgba = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + opacity;
                 dataset.push({
                     label: i,
                     data: curClusters.centroids[i],
                     borderWidth: 3,
                     borderColor: rgba,
                     backgroundColor: rgba,
+//                    fill: fill
                     fill: false
                 });
             }

@@ -9,7 +9,7 @@ import pickle
 from flask import Flask, Response, request, render_template
 
 from shape import app
-from core.predictions.utils import smooth
+from core.predictions.utils import smooth, DTWDistance
 from core.utils.utils import get_credits_idx
 
 # PRED_FN = 'sent_biclass_19.csv'
@@ -17,9 +17,18 @@ PRED_FN = 'sent_biclass.csv'
 VIDEOS_PATH = 'shape/static/videos/'
 OUTPUTS_PATH = 'shape/outputs/'
 
+TS_FILMS_FN = 'ts_dirfilms-n441-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
+TS_SHORTS_FN = 'ts_dirshorts-n1323-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
+TS_FILMS_IDX2TITLE_FN = 'ts_idx2title_dirfilms-n441-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
+TS_SHORTS_IDX2TITLE_FN = 'ts_idx2title_dirshorts-n1323-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
+
 title2vidpath = {}
 format2titles = defaultdict(list)
 title2format = {}
+
+clusters = {}
+ts = {}
+ts_idx2title = {}
 
 # Used for initial curve to display
 cur_format = None
@@ -86,9 +95,11 @@ def setup_initial_data():
     Return initial data to pass to template.
     Also set global variables cur_pd_df and cur_title
     """
+    ####################################################################################################################
+    # Set titles, videopaths, etc
+    ####################################################################################################################
     global title2vidpath, format2titles, title2format
 
-    # Set global variables reltaed to *all* videos
     vidpaths = get_all_vidpaths_with_preds()
     format2titles = defaultdict(list)
     for vp in vidpaths:
@@ -103,16 +114,17 @@ def setup_initial_data():
     for format, titles in format2titles.items():
         print '{}: {}'.format(format, len(titles))
 
-    print 'Setup done'
 
-def get_cluster_data():
-    # TODO: this is hardcoded in right now, probably should be moved somewhere?
-    clusters = {}
+    ####################################################################################################################
+    # Set cluster related data
+    ####################################################################################################################
+    global clusters
 
     # Films
     clusters['films'] = {}
-    ks = [3, 4]
+    ks = [3, 4, 5]
     for k in ks:
+        # TODO: move these to top of file
         centroids_fn = 'centroids_dirfilms-n441-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'.format(k)
         assignments_fn = 'assignments_dirfilms-n441-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'.format(k)
         centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
@@ -123,17 +135,20 @@ def get_cluster_data():
                 clusters['films'][str(k)]['centroids'] = pickle.load(f)        # use string so it's treated as a js Object instead of an array in template
             with open(assignments_path) as f:
                 clusters['films'][str(k)]['assignments'] = pickle.load(f)      # use string so it's treated as a js Object instead of an array in template
+
+            # ts_dists = compute_distances(clusters['films'][str(k)]['centroids'], clusters['films'][str(k)]['assignments'])
+            # clusters['films'][str(k)]['ts_dists'] = ts_dists
         else:
             print 'Centroids/assignments path doesnt exist:\n{}\n{}'.format(centroids_path, assignments_path)
 
     # Shorts
     clusters['shorts'] = {}
-    ks = [2, 3, 4, 5, 6, 8, 10]
+    ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     for k in ks:
         centroids_fn = 'centroids_dirshorts-n1323-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'.format(k)
         assignments_fn = 'assignments_dirshorts-n1323-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'.format(k)
         centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
-        assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
+        assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
         if os.path.exists(centroids_path) and os.path.exists(assignments_path):
             clusters['shorts'][str(k)] = {}
             with open(centroids_path) as f:
@@ -143,19 +158,37 @@ def get_cluster_data():
         else:
             print 'Centroids/assignments path doesnt exist:\n{}\n{}'.format(centroids_path, assignments_path)
 
-    return clusters
+    # All time series
+    global ts, ts_idx2title
+    # ts['films'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FILMS_FN), 'r'))
+    # ts['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_FN), 'r'))
+    ts_idx2title['films'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FILMS_IDX2TITLE_FN), 'r'))
+    ts_idx2title['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_IDX2TITLE_FN), 'r'))
 
-    # TODO: have a route /api/cluster/<format>/<k>' that returns that data?
-        # FOR now, just gonna return it in regular so I can get a chartjs plot up
+    print 'Setup done'
 
 #################################################################################################
 # ROUTING FUNCTIONS
 #################################################################################################
 @app.route('/shape', methods=['GET'])
 def shape():
-    """Main shape template with initial data"""
+    """
+    Return main shape template with data
+
+    Data
+    ----
+    format2titles:
+        - to create dropdowns in dat.gui
+    framepaths:
+        - to display image for current video
+    preds:
+        - to create graph for current video
+    clusters:
+        - for clusters view
+    """
     global format2titles, \
-        cur_format, cur_title, cur_pd_df, cur_vid_framepaths
+        cur_format, cur_title, cur_pd_df, cur_vid_framepaths, \
+        clusters, ts_idx2title
 
     # Get information for *first* video to show
     # cur_format = format2titles.keys()[0]
@@ -164,18 +197,18 @@ def shape():
     cur_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
     cur_vid_preds = get_preds_from_df(cur_pd_df, window_len=300)    # Window_len has to match default in html file
 
-    data = {'format2titles': format2titles, 'framepaths': cur_vid_framepaths, 'preds': cur_vid_preds}
-    data['clusters'] = get_cluster_data()
-    # format2titles to create dropdowns in dat.gui
-    # framepaths to display image for current video
-    # preds to create graph for current video
-    # clusters for clusters view
+    data = {'format2titles': format2titles,
+            'framepaths': cur_vid_framepaths, 'preds': cur_vid_preds,
+            'clusters': clusters,
+            'ts_idx2title': ts_idx2title}
 
     return render_template('plot_shape.html', data=json.dumps(data))
 
 @app.route('/api/pred/<title>/<window_len>', methods=['GET'])
 def get_preds_and_frames(title, window_len):
-    """Return predictions for a given movie with window_len, update global vars"""
+    """
+    Return predictions for a given movie with window_len; update global vars
+    """
     global title2vidpath, \
         cur_format, cur_title, cur_pd_df, cur_vid_framepaths
     if title != cur_title:
