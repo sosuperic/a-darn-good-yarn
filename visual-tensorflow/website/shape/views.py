@@ -12,8 +12,8 @@ from shape import app
 from core.predictions.utils import smooth
 from core.utils.utils import get_credits_idx
 
-PRED_FN = 'sent_biclass_19.csv'
-# PRED_FN = 'sent_biclass.csv'
+# PRED_FN = 'sent_biclass_19.csv'
+PRED_FN = 'sent_biclass.csv'
 VIDEOS_PATH = 'shape/static/videos/'
 OUTPUTS_PATH = 'shape/outputs/'
 
@@ -107,11 +107,42 @@ def setup_initial_data():
 
 def get_cluster_data():
     # TODO: this is hardcoded in right now, probably should be moved somewhere?
-    ks = [5]
     clusters = {}
+
+    # Films
+    clusters['films'] = {}
+    ks = [3, 4]
     for k in ks:
-        with open(os.path.join(OUTPUTS_PATH, 'cluster/data', 'old/centroids_nALL-k{}-ds3.pkl'.format(k)), 'r') as f:
-            clusters[str(k)] = pickle.load(f)       # use string so it's treated as a js Object instead of an array in template
+        centroids_fn = 'centroids_dirfilms-n441-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'.format(k)
+        assignments_fn = 'assignments_dirfilms-n441-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'.format(k)
+        centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
+        assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
+        if os.path.exists(centroids_path) and os.path.exists(assignments_path):
+            clusters['films'][str(k)] = {}
+            with open(centroids_path) as f:
+                clusters['films'][str(k)]['centroids'] = pickle.load(f)        # use string so it's treated as a js Object instead of an array in template
+            with open(assignments_path) as f:
+                clusters['films'][str(k)]['assignments'] = pickle.load(f)      # use string so it's treated as a js Object instead of an array in template
+        else:
+            print 'Centroids/assignments path doesnt exist:\n{}\n{}'.format(centroids_path, assignments_path)
+
+    # Shorts
+    clusters['shorts'] = {}
+    ks = [2, 3, 4, 5, 6, 8, 10]
+    for k in ks:
+        centroids_fn = 'centroids_dirshorts-n1323-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'.format(k)
+        assignments_fn = 'assignments_dirshorts-n1323-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'.format(k)
+        centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
+        assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
+        if os.path.exists(centroids_path) and os.path.exists(assignments_path):
+            clusters['shorts'][str(k)] = {}
+            with open(centroids_path) as f:
+                clusters['shorts'][str(k)]['centroids'] = pickle.load(f)        # use string so it's treated as a js Object instead of an array in template
+            with open(assignments_path) as f:
+                clusters['shorts'][str(k)]['assignments'] = pickle.load(f)      # use string so it's treated as a js Object instead of an array in template
+        else:
+            print 'Centroids/assignments path doesnt exist:\n{}\n{}'.format(centroids_path, assignments_path)
+
     return clusters
 
     # TODO: have a route /api/cluster/<format>/<k>' that returns that data?
@@ -134,13 +165,11 @@ def shape():
     cur_vid_preds = get_preds_from_df(cur_pd_df, window_len=300)    # Window_len has to match default in html file
 
     data = {'format2titles': format2titles, 'framepaths': cur_vid_framepaths, 'preds': cur_vid_preds}
+    data['clusters'] = get_cluster_data()
     # format2titles to create dropdowns in dat.gui
     # framepaths to display image for current video
     # preds to create graph for current video
-
-    # # TODO: tmp
-    data['clusters'] = get_cluster_data()
-    # print data['clusters']
+    # clusters for clusters view
 
     return render_template('plot_shape.html', data=json.dumps(data))
 

@@ -47,7 +47,7 @@
             // Clusters View - intialize
             var clusters = {};
             clusters.format = 'film';
-            clusters.k = Object.keys(data.clusters);
+            clusters.k = Object.keys(data.clusters.films)[0];
             this.clusters = clusters;
         };
 
@@ -134,7 +134,27 @@
             function addClustersGUI() {
                 // Set ranges, initial values
                 var guiFormats = gui.add(datgui.clusters, 'format', ['film', 'short']);
-                var guiK = gui.add(datgui.clusters, 'k', Object.keys(data.clusters));
+                var formatKClusters = data.clusters[datgui.clusters.format + 's'];
+                var guiK = gui.add(datgui.clusters, 'k', Object.keys(formatKClusters));
+
+                // Handlers
+                guiFormats.onFinishChange(function(format) {
+                    // Remove k handler to get list of available k's for that format
+                    gui.__controllers[2].remove();
+                    var formatKClusters;
+                    if (format == 'film') {
+                        formatKClusters = data.clusters[datgui.clusters.format + 's'];
+                    } else if (format == 'short') {
+                        formatKClusters = data.clusters[datgui.clusters.format + 's'];
+                    }
+                    guiK = gui.add(datgui.clusters, 'k', Object.keys(formatKClusters));
+                    drawClusters(datgui);
+                    addFinishChangeHandlers(guiK);
+                });
+                function addFinishChangeHandlers(guiK) {
+                    guiK.onFinishChange(function() { drawClusters(datgui); });
+                }
+                addFinishChangeHandlers(guiK);
             }
 
 
@@ -144,7 +164,7 @@
             addOneVideoGUI();
             showImage("../static/videos/" + data.framepaths[0], 256, 256, '');
             drawOneVideo(datgui);
-//            drawCluster(datgui);
+//            drawClusters(datgui);
 
             /***********************************************************************************************************
              * Some other handlers (should probably be moved somewhere)
@@ -291,7 +311,8 @@
             // Get dataset
             // Each object in dataset array corresponds to one line
             var dataset = [];
-            for (var i = 0; i < data.clusters[datgui.clusters.k].length; i++) {
+            var curClusters = data.clusters[datgui.clusters.format + 's'][datgui.clusters.k];   // film -> films
+            for (var i = 0; i < curClusters.centroids.length; i++) {
                 // TODO: should hardcode color palettes for n colors
                 // Need to find a tool (or just write one) that generate palette given n colors
                 // Ideally, palette expands naturally as n increases, i.e. n=3 -> RGB, and then more 'complex' colors with greater n
@@ -299,15 +320,15 @@
                 var rgba = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",0.75)";
                 dataset.push({
                     label: i,
-                    data: data.clusters[datgui.clusters.k][i],
-                    borderWidth: 1,
+                    data: curClusters.centroids[i],
+                    borderWidth: 3,
                     borderColor: rgba,
                     backgroundColor: rgba,
                     fill: false
                 });
             }
             var labels = [];
-            for (var i = 0; i < data.clusters[datgui.clusters.k][0].length; i++) {
+            for (var i = 0; i < curClusters.centroids[0].length; i++) {
                 labels.push(i);
             }
             var chartData = {
