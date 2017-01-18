@@ -58,10 +58,12 @@ VIDEOS_PATH = 'data/videos'
 # CMU Movie Summary path
 CMU_PATH = 'data/CMU_movie_summary/MovieSummaries/'
 
-VIDEODB = 'data/db/VideoPath.db'
+# Videos
 VID_EXTS = ['webm', 'mkv', 'flv', 'vob', 'ogv', 'ogg', 'drc', 'gif', 'gifv', 'mng', 'avi', 'mov', 'qt', 'wmv',
                 'yuv', 'rm', 'rmvb', 'asf', 'amv', 'mp4', 'm4p', 'm4v', 'mpg', 'mp2', 'mpeg', 'mpe', 'mpv', 'm2v',
                 'm4v', 'svi', '3gp', '3g2', 'mxf', 'roq', 'nsv', 'flv', 'f4v', 'f4p', 'f4a', 'f4b']
+VIDEOPATH_DB = 'data/db/VideoPath.db'
+VIDEOMETADATA_DB = 'data/db/VideoMetadata.pkl'
 
 ########################################################################################################################
 # Sentibank
@@ -597,7 +599,17 @@ def save_plutchik_color_imgs():
             scipy.misc.imsave(os.path.join(PLUTCHIK_PATH, '{}_{}.jpg'.format(i, label)), im)
 
 ########################################################################################################################
+########################################################################################################################
+########################################################################################################################
+#
 # Videos
+#
+########################################################################################################################
+########################################################################################################################
+########################################################################################################################
+
+########################################################################################################################
+# Frames
 ########################################################################################################################
 def save_video_frames(vids_dir):
     """
@@ -719,71 +731,9 @@ def save_credits_index(vids_dir, overwrite_files=False):
     print 'Credits not located for {} movies:'.format(len(not_located))
     pprint(sorted(not_located))
 
-def match_movie_metadata(vids_dir):
-    """
-    Get metadata for each video in vids_dir
-
-    Parameters
-    ----------
-    vids_dir: directory within VIDEOS_PATH that contains sub-directories, each which may contain a movie
-
-    Notes
-    -----
-    Assumes each subdirectory is similar to the format: <title> (<year>), e.g. King's Speech (2010)
-
-    movie.metadata.tsv columns:
-    # 1. Wikipedia movie ID ('975900')
-    # 2. Freebase movie ID ('/m/03vyhn')
-    # 3. Movie name ('Ghosts of Mars')
-    # 4. Movie release date (2001-08-24)
-    # 5. Movie box office revenue  ('14010832')
-    # 6. Movie runtime ('98.0')
-    # 7. Movie languages (Freebase ID:name tuples) ('{"/m/02h40lc": "English Language"}')
-    # 8. Movie countries (Freebase ID:name tuples) ('{"/m/09c7w0": "United States of America"}'
-    # 9. Movie genres (Freebase ID:name tuples) ('{"/m/01jfsb": "Thriller", "/m/06n90": "Science Fiction", ...}\n'}
-    """
-
-    movie2metadata = {}
-    with open(os.path.join(CMU_PATH, 'movie.metadata.tsv'), 'r') as f:
-        for line in f.readlines():
-            line = line.strip('\n').split('\t')
-            movie2metadata[line[2]] = {'date': line[3],
-                                       'revenue': None if line[4] == '' else int(line[4]),
-                                       'runtime': None if line[5] == '' else float(line[5]),
-                                       'genres': json.loads(line[8]).values()}
-    movies = movie2metadata.keys()
-
-    movie2tropes = defaultdict(list)
-    with open(os.path.join(CMU_PATH, 'tvtropes.clusters.txt'), 'r') as f:
-        for line in f.readlines():
-            trope, movie_data = line.split('\t')
-            movie_data = json.loads(movie_data)     # char, movie, id, actor
-            movie2tropes[movie_data['movie']].append(trope)
-
-
-    with io.open('notes/CMU_tvtropes_movies.txt', 'w') as f:
-        for movie in movie2tropes.keys():
-            f.write(movie)
-            f.write(u'\n')
-
-    vids_path = os.path.join(VIDEOS_PATH, vids_dir)
-    vid_dirs = [d for d in os.listdir(vids_path) if not d.startswith('.')]
-    i = 0
-    for vid_dir in vid_dirs:
-        # print vid_dir
-        m = re.match(r'(.+)\(\d+\)?$', vid_dir)
-        title = m.group(1)
-        matched = sorted([(fuzz.ratio(title, movie_name), movie_name) for movie_name in movies])[-1]
-        # print title, matched
-
-        if matched[0] > 90:
-            i += 1
-        else:
-            print title, matched
-
-    print i, len(vid_dirs)
-
-
+########################################################################################################################
+# VideoPath DB
+########################################################################################################################
 def create_videopath_db():
     """
     Create sqllite db storing information about video paths, formats, frames, etc.
@@ -807,9 +757,9 @@ def create_videopath_db():
             return dir
 
     # Delete and recreate database
-    if os.path.exists(VIDEODB):
-        os.remove(VIDEODB)
-    conn = sqlite3.connect(VIDEODB)
+    if os.path.exists(VIDEOPATH_DB):
+        os.remove(VIDEOPATH_DB)
+    conn = sqlite3.connect(VIDEOPATH_DB)
     conn.execute('CREATE TABLE VideoPath('
                  'category TEXT,'
                  'title TEXT,'
@@ -859,6 +809,227 @@ def create_videopath_db():
     # datasets is supposed to be a comma-separated list of these datasets. In order to make it complete, I should
     # match the movies from the txt files containing the list of movies and upsert into the table.
 
+########################################################################################################################
+# VideoMetadata DB
+########################################################################################################################
+def match_film_metadata():
+    """
+    Get metadata for each film using CMU_movie_summary dataset
+
+    Notes
+    -----
+    Assumes each title is similar to the format: <title> (<year>), e.g. King's Speech (2010)
+
+    movie.metadata.tsv columns:
+    # 1. Wikipedia movie ID ('975900')
+    # 2. Freebase movie ID ('/m/03vyhn')
+    # 3. Movie name ('Ghosts of Mars')
+    # 4. Movie release date (2001-08-24)
+    # 5. Movie box office revenue  ('14010832')
+    # 6. Movie runtime ('98.0')
+    # 7. Movie languages (Freebase ID:name tuples) ('{"/m/02h40lc": "English Language"}')
+    # 8. Movie countries (Freebase ID:name tuples) ('{"/m/09c7w0": "United States of America"}'
+    # 9. Movie genres (Freebase ID:name tuples) ('{"/m/01jfsb": "Thriller", "/m/06n90": "Science Fiction", ...}\n'}
+    """
+
+    # Get all metadata
+    movie2metadata = {}
+    with open(os.path.join(CMU_PATH, 'movie.metadata.tsv'), 'r') as f:
+        for line in f.readlines():
+            line = line.strip('\n').split('\t')
+            movie2metadata[line[2]] = {'date': line[3],
+                                       'revenue': None if line[4] == '' else int(line[4]),
+                                       'runtime': None if line[5] == '' else float(line[5]),
+                                       'genres': json.loads(line[8]).values()}
+    movies = set(movie2metadata.keys())
+
+    # Get tropes for each movie in tvtropes data
+    movie2tropes = defaultdict(list)
+    with open(os.path.join(CMU_PATH, 'tvtropes.clusters.txt'), 'r') as f:
+        for line in f.readlines():
+            trope, movie_data = line.split('\t')
+            movie_data = json.loads(movie_data)     # char, movie, id, actor
+            movie2tropes[movie_data['movie']].append(trope)
+
+    # Write moves to file for the hell of it, so I can spot check
+    with io.open('notes/CMU_tvtropes_movies.txt', 'w') as f:
+        for movie in movie2tropes.keys():
+            f.write(movie)
+            f.write(u'\n')
+
+    # Match videos to movies with metadata
+    # Most are a good match, and there's only around 500 movies, so I manually cleaned it as follows:
+    # I ran it once and saved stdout to a text file and just went through all the ones that aren't
+    # This was done when M-VAD and MovieQA were added to MoviePath DB,
+    #   and a few movies from other, CMU_tv_tropes, and animated
+    # Then I just found all the ones that were incorrect or not there.
+    # The biggest mismatches are for movies with sequels
+    # The ones not there are mostly newer movies
+    # The following was done manually
+    manually_matched = {
+        'The Hobbit The Desolation of Smaug': None,
+        'Wanted': 'Wanted', # not Wanted 2
+        'Cruel Intentions': 'Cruel Intentions',
+        'Blue Jasmine': None,
+        'Still Alice': None,
+        'The Godfather Part I': 'The Godfather',
+        'Twilight Saga': 'Twilight',
+        'A Royal Night Out': None,
+        'American Heist': None,
+        'Gone Girl': None,
+        'A Walk Among the Tombstones': None,
+        '12 Years a Slave': None,
+        'Avatar': 'Avatar',
+        'Wild Things': 'Wild Things',
+        'Oceans 11': "Ocean's Eleven",
+        'Chappie': None,
+        'Kung Fu Panda': 'Kung Fu Panda',
+        'Her': 'Her',
+        'X-Men Days of Future Past': None,
+        'How to Train Your Dragon 2': None,
+        'Carol': 'Carol',
+        'The Intouchables': 'Intouchables',
+        '22 Jump Street': None,
+        'Marley and Me': None,
+        'Before I Go to Sleep': None,
+        'Taken': 'Taken',
+        '2 Guns': None,
+        '3 Days to Kill': None,
+        'The Butterfly Effect': 'The Butterfly Effect',
+        'Short Term 12': None,
+        'Elizabeth': 'Elizabeth',
+        'American Psycho': 'American Psycho',
+        'Men In Black': 'Men In Black',
+        'This Is 40': None,
+        'The Grand Budapest Hotel': None,
+        'Zipper': None,
+        'Mrs Doubtfire': 'Mrs. Doubtfire',
+        'The Godfather Part 3': 'The Godfather Part III',
+        'Bad Santa': 'Bad Santa',
+        'Divergent': None,
+        'The Hobbit The Battle of The Five Armies': None,
+        'Cold in July': None,
+        'Absolutely Anything': None,
+        'Harry Potter And The Deathly Hallows Part 2': 'Harry Potter and the Deathly Hallows \xe2\x80\x93 Part 2',
+        'A Walk in the Woods': None,
+        'Back to the Future II': 'Back to the Future Part II',
+        'I Robot': 'I, Robot',
+        'About Time': None,
+        '71': None,
+        'X2 X-Men United': None,
+        'Iron Man': 'Iron Man',
+        'Captain America Civil War': None,
+        'Shrek': 'Shrek',
+        'Zootopia': None,
+        'Big Hero 6': None,
+        'The Wind Rises': None,
+        'Bruno': 'Br\xc3\xbcno',
+        'The Guilt Trip': None,
+        'The Adventures of Tintin': None,
+
+    }
+
+    result = {}
+
+    conn = sqlite3.connect(VIDEOPATH_DB)
+    with conn:
+        cur = conn.cursor()
+        rows = cur.execute("SELECT title FROM VideoPath WHERE category=='films'")
+        for row in rows:
+            title = row[0]
+            title = title.encode('utf-8')
+            m = re.match(r'(.+)\(\d+\)?$', title)
+            title = m.group(1)
+
+            if title in manually_matched:
+                match = manually_matched[title]
+                if match:
+                    result[title] = movie2metadata[match]
+                    continue
+            else:
+                matched = sorted([(fuzz.ratio(title, movie_name), movie_name) for movie_name in movies])
+                matched = [t for s, t in matched[::-1][:10]]        # top 10
+                match = matched[0]
+                result[title] = movie2metadata[match]
+
+                # print title, matched
+    return result
+
+def get_shorts_metadata():
+    """
+    Aggregate metadata for each video in data/videos/shorts
+
+    Notes
+    -----
+    Each folder downloaded from Vimeo should have 1) <title>.info.json, 2) <title>.annotations.xml, and 3) <title>.description
+
+    Returns
+    -------
+    short2metadata: dict
+        - key is title (name of dir) This title is the common key with VIDEOPATH_DB
+        - value is dictionary of metadata
+    - The metadata dictionary is a subset of the info.json data and includes the description. For all the videos I
+    spotchecked, annotatiosn is empty, so I'm skipping it for now.
+    """
+    short2metadata = {}
+
+    def parse_info_file(fp):
+        data = json.load(open(fp, 'r'))
+        info = {
+            'comment_count': data.get('comment_count'),
+            'description': data.get('description'),
+            'display_id': data.get('display_id'),  # not sure what's the diff with 'id' -- one video I checked they were the same
+            'duration': data.get('duration'),
+            'fps': data.get('fps'),
+            'fulltitle': data.get('fulltitle'),
+            'id': data.get('id'),
+            'like_count': data.get('like_count'),
+            'subtitles': data.get('subtitles'),
+            'title': data.get('title'),
+            'uploader': data.get('uploader'),
+            'uploader_id': data.get('uploader_id'),
+            'uploader_url': data.get('uploader_url'),
+            'upload_date': data.get('upload_date'),
+            'view_count': data.get('view_count')
+        }
+        return info
+
+    conn = sqlite3.connect(VIDEOPATH_DB)
+    with conn:
+        cur = conn.cursor()
+        rows = cur.execute("SELECT dirpath, title FROM VideoPath WHERE category=='shorts'")
+        for row in rows:
+            dirpath, title = row[0], row[1]
+            # print title
+            info_fp = os.path.join(dirpath, title +  u'.info.json')
+            info = parse_info_file(info_fp)
+            short2metadata[title] = info
+    return short2metadata
+
+def create_videometadata_db():
+    """
+    Create VideoMetadata DB -- right now it's just a pkl file (I was looking for a lightweight no SQL database.)
+    The keys are titles (common key with VideoPath DB).
+    """
+    db = {}
+
+    print 'Getting shorts metadata'
+    short2metadata = get_shorts_metadata()
+    for title, metadata in short2metadata.items():
+        db[title] = metadata
+
+    print 'Getting films metadata'
+    film2metadata = match_film_metadata()
+    for title, metadata in film2metadata.items():
+        db[title] = metadata
+
+    print 'Saving'
+    with open(VIDEOMETADATA_DB, 'w') as f:
+        pickle.dump(db, f, protocol=2)
+
+    print 'Done'
+
+
 if __name__ == '__main__':
 
     # Set up commmand line arguments
@@ -880,8 +1051,10 @@ if __name__ == '__main__':
     parser.add_argument('--save_credits_index', dest='save_credits_index', action='store_true')
     parser.add_argument('--save_credits_index_overwrite', dest='save_credits_index_overwrite', default=False,
                         action='store_true', help='overwrite credits_index.txt files')
-    parser.add_argument('--match_movie_metadata', dest='match_video_metadata', action='store_true')
     parser.add_argument('--create_videopath_db', dest='create_videopath_db', action='store_true')
+    parser.add_argument('--match_film_metadata', dest='match_film_metadata', action='store_true')
+    parser.add_argument('--get_shorts_metadata', dest='get_shorts_metadata', action='store_true')
+    parser.add_argument('--create_videometadata_db', dest='create_videometadata_db', action='store_true')
     parser.add_argument('--vids_dir', dest='vids_dir', default=None,
                         help='folder that contains dirs (one movie each), e.g. films/MovieQA_full_movies')
 
@@ -919,5 +1092,9 @@ if __name__ == '__main__':
         save_credits_index(cmdline.vids_dir, overwrite_files=cmdline.save_credits_index_overwrite)
     elif cmdline.create_videopath_db:
         create_videopath_db()
-    elif cmdline.match_video_metadata:
-        match_movie_metadata(cmdline.vids_dir)
+    elif cmdline.match_film_metadata:
+        pprint(match_film_metadata(cmdline.vids_dir))
+    elif cmdline.get_shorts_metadata:
+        pprint(get_shorts_metadata())
+    elif cmdline.create_videometadata_db:
+        create_videometadata_db()
