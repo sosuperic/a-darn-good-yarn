@@ -351,7 +351,6 @@
 
             // Attach handler to open vimeo for shorts
             if (datgui.oneVideo.format == 'short') {
-                console.log('attached');
                 openVimeoOnFrameClick();
             }
             function openVimeoOnFrameClick() {
@@ -412,30 +411,55 @@
             }
 
             // Display assignments if focusOnKth
-            // TODO: show closest points
+            // TODO: show closest points -- right now only distances for shorts computed, hence the if
+            // For films - just show first 10
             if (datgui.clusters.focusOnKth != 'all') {
-                var kthClustering = data.clusters[datgui.clusters.format + 's'][datgui.clusters.k];
-                var assignments = kthClustering.assignments[datgui.clusters.focusOnKth];
-                for (var i = 0; i < assignments.length; i++) {
-                    var title = data.ts_idx2title[datgui.clusters.format + 's'][assignments[i]];
-                    var series = data.ts[datgui.clusters.format + 's'][assignments[i]];
-                    console.log(title);
+                if (datgui.clusters.format == 'film') {
+                    var kthClustering = data.clusters[datgui.clusters.format + 's'][datgui.clusters.k];
+                    var assignments = kthClustering.assignments[datgui.clusters.focusOnKth];
+                    for (var i = 0; i < assignments.length; i++) {
+                        var title = data.ts_idx2title[datgui.clusters.format + 's'][assignments[i]];
+                        var series = data.ts[datgui.clusters.format + 's'][assignments[i]];
+                        console.log(title);
 
-                    var hex = getRandomHexColor();
-                    var rgb = hexToRGB(hex);
-                    var rgba = getRGBA(rgb.r, rgb.g, rgb.b, 0.2);
-                    dataset.push({
-                        label: title,
-                        data: downsampleTimeseries(series, DOWNSAMPLE_RATE),
-                        borderWidth: 1,
-                        borderColor: rgba,
-                        backgroundColor: rgba,
-                        fill: false
-                    });
+                        var hex = getRandomHexColor();
+                        var rgb = hexToRGB(hex);
+                        var rgba = getRGBA(rgb.r, rgb.g, rgb.b, 0.2);
+                        dataset.push({
+                            label: title,
+                            data: downsampleTimeseries(series, DOWNSAMPLE_RATE),
+                            borderWidth: 1,
+                            borderColor: rgba,
+                            backgroundColor: rgba,
+                            fill: false
+                        });
 
-                    // Too many lines!
-                    if (i == 10) {
-                        break;
+                        // Too many lines!
+                        if (i == 10) {
+                            break;
+                        }
+                    }
+                } else if (datgui.clusters.format == 'short') {
+                    var closestMemberIndices = data.clusters.shorts[datgui.clusters.k].closest[datgui.clusters.focusOnKth];
+                    console.log(closestMemberIndices);
+//                    for (var idx in closestMemberIndices) {
+                    for (var i = 0; i < closestMemberIndices.length; i++) {
+                        var idx = closestMemberIndices[i];
+                        var title = data.ts_idx2title[datgui.clusters.format + 's'][idx];
+                        var series = data.ts[datgui.clusters.format + 's'][idx];
+                        console.log(title);
+
+                        var hex = getRandomHexColor();
+                        var rgb = hexToRGB(hex);
+                        var rgba = getRGBA(rgb.r, rgb.g, rgb.b, 0.2);
+                        dataset.push({
+                            label: title,
+                            data: downsampleTimeseries(series, DOWNSAMPLE_RATE),
+                            borderWidth: 1,
+                            borderColor: rgba,
+                            backgroundColor: rgba,
+                            fill: false
+                        });
                     }
                 }
             }
@@ -526,6 +550,7 @@
             }
             function openVimeoOnTimeseriesClick() {
                 $("#chart").click(function(evt){
+                    console.log(datgui.clusters.format);
                     var element = chart.getElementAtEvent(evt);
                     if (typeof element[0] != 'undefined') {
                         var title = chart.data.datasets[element[0]._datasetIndex].label;

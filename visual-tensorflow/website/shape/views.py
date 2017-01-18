@@ -13,10 +13,11 @@ from core.predictions.utils import smooth, DTWDistance
 from core.utils.utils import get_credits_idx
 
 ###### PATHS
-# PRED_FN = 'sent_biclass_19.csv'
-PRED_FN = 'sent_biclass.csv'
 VIDEOS_PATH = 'shape/static/videos/'
 OUTPUTS_PATH = 'shape/outputs/'
+
+# For local vs shannon
+PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
 
 TS_FILMS_FN = 'ts_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
 TS_SHORTS_FN = 'ts_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
@@ -127,10 +128,6 @@ def setup_initial_data():
         format2titles[format] = sorted(titles)
         print '{}: {}'.format(format, len(titles))
 
-    print format2titles
-    print '@@@@@@@@@@@@@'
-
-
     ####################################################################################################################
     # Set time series, cluster related data
     ####################################################################################################################
@@ -138,7 +135,7 @@ def setup_initial_data():
     global ts, ts_idx2title
     ts['films'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FILMS_FN), 'r'))
     ts['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_FN), 'r'))
-    # make it serialiable
+    # make it serializable
     ts['films'] = [list(arr) for arr in ts['films']]
     ts['shorts'] = [list(arr) for arr in ts['shorts']]
 
@@ -146,23 +143,23 @@ def setup_initial_data():
     ts_idx2title['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_IDX2TITLE_FN), 'r'))
 
 
-
+    # TODO: clean up and refactor following
     global clusters, ts_dists
     # Films
     clusters['films'] = {}
-    ts_dists['films'] = {}
     ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     for k in ks:
+        k = str(k)          # use string so it's treated as a js Object instead of an array in template
         centroids_fn = FILMS_CENTROIDS_FN.format(k)
         assignments_fn = FILMS_ASSIGNMENTS_FN.format(k)
         centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
         assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
         if os.path.exists(centroids_path) and os.path.exists(assignments_path):
-            clusters['films'][str(k)] = {}
+            clusters['films'][k] = {}
             with open(centroids_path) as f:
-                clusters['films'][str(k)]['centroids'] = pickle.load(f)        # use string so it's treated as a js Object instead of an array in template
+                clusters['films'][k]['centroids'] = pickle.load(f)
             with open(assignments_path) as f:
-                clusters['films'][str(k)]['assignments'] = pickle.load(f)      # use string so it's treated as a js Object instead of an array in template
+                clusters['films'][k]['assignments'] = pickle.load(f)
 
             # ts_dists = compute_distances(clusters['films'][str(k)]['centroids'], clusters['films'][str(k)]['assignments'])
             # clusters['films'][str(k)]['ts_dists'] = ts_dists
@@ -171,36 +168,41 @@ def setup_initial_data():
 
     # Shorts
     clusters['shorts'] = {}
-    ts_dists['shorts'] = {}
     ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     for k in ks:
+        k = str(k)          # use string so it's treated as a js Object instead of an array in template
         centroids_fn = SHORTS_CENTROIDS_FN.format(k)
         assignments_fn = SHORTS_ASSIGNMENTS_FN.format(k)
         centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
         assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
         if os.path.exists(centroids_path) and os.path.exists(assignments_path):
-            clusters['shorts'][str(k)] = {}
+            clusters['shorts'][k] = {}
             with open(centroids_path) as f:
-                clusters['shorts'][str(k)]['centroids'] = pickle.load(f)        # use string so it's treated as a js Object instead of an array in template
+                clusters['shorts'][k]['centroids'] = pickle.load(f)
             with open(assignments_path) as f:
-                clusters['shorts'][str(k)]['assignments'] = pickle.load(f)      # use string so it's treated as a js Object instead of an array in template
+                clusters['shorts'][k]['assignments'] = pickle.load(f)
+
+            # TS Distances to centroids
+            # ts_dists: dict, key is int (centroid_idx), value = dict (key is member_idx, value is distance)
+            ts_dists_fn = TS_DISTS_SHORTS_FN.format(k)
+            ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
+            if os.path.exists(ts_dists_path):
+                with open(ts_dists_path) as f:
+                    kdists = pickle.load(f)      # key is ts_index, value is distance to its centroid
+                centroid2closest = {}
+                for centroid_idx, dists in kdists.items():
+                    sorted_member_indices = sorted(dists, key=dists.get)
+                    top_n = sorted_member_indices[:10]
+                    centroid2closest[centroid_idx] = top_n
+                clusters['shorts'][k]['closest'] = centroid2closest
+            else:
+                print 'ts_dists path doesnt exist:\n{}'.format(ts_dists_path)
+
         else:
             print 'Centroids/assignments path doesnt exist:\n{}\n{}'.format(centroids_path, assignments_path)
 
 
-        # # TS Distances to centroids
-        # ts_dists_fn = TS_DISTS_SHORTS_FN.format(k)
-        # ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
-        # if os.path.exists(ts_dists_path):
-        #     with open(ts_dists_path) as f:
-        #         dists = pickle.load(f)      # key is ts_index, value is distance to its centroid
-        #         print dists
-        #     # TODO: sort dists
-        #     for ts_index, dist in dists.items():
-        #
-        #     ts_dists['shorts'][str(k)] = dists
-        # else:
-        #     print 'ts_dists path doesnt exist:\n{}'.format(ts_dists_path)
+
 
     print 'Setup done'
 
