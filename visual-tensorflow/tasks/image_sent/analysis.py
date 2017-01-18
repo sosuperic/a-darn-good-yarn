@@ -11,6 +11,7 @@ import os
 import pandas as pd
 import pickle
 import scipy.interpolate as interp
+import sqlite3
 
 # from core.predictions.spatio_time_cluster import *
 from core.predictions.ts_cluster import *
@@ -23,6 +24,9 @@ VIDEOS_PATH = 'data/videos'
 
 CLUSTERS_STR = 'dir{}-n{}-normMags{}-k{}-w{}-ds{}-maxnf{}-fn{}'
 TS_STR = 'dir{}-n{}-normMags{}-w{}-ds{}-maxnf{}-fn{}'
+
+VIDEOPATH_DB = 'data/db/VideoPath.db'
+VIDEOMETADATA_DB = 'data/db/VideoMetadata.pkl'
 
 class Analysis(object):
     def __init__(self):
@@ -214,7 +218,7 @@ class Analysis(object):
         return ts
 
     ####################################################################################################################
-    # Preprocess data
+    # Compute and save distances
     ####################################################################################################################
     # TODO: this should be a part of ts_cluster (distances are calculated anyway, return on last iteration)
     def compute_and_save_distance(self, root_videos_dirpath, n, norm_mags, window_size, pred_fn, downsample_rate, max_num_frames, k):
@@ -269,6 +273,22 @@ class Analysis(object):
             pickle.dump(ts_dists, f, protocol=2)
 
         return ts_dists
+
+    ####################################################################################################################
+    # Analyze 'groups' (combinations of different metadata, e.g. genre + year)
+    ####################################################################################################################
+    def save_and_analyze_groups(self):
+
+        def get_groups():
+            conn = sqlite3.connect(VIDEOPATH_DB)
+            with conn:
+                cur = conn.cursor()
+                rows = cur.execute("SELECT title FROM VideoPath WHERE category=='films'")
+                films = [row[0] for row in rows]
+
+            video2metadata = pickle.load(open(VIDEOMETADATA_DB, 'r'))
+            for film in films:
+                metadata = video2metadata[film]
 
     ####################################################################################################################
     # Helper functions

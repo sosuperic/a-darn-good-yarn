@@ -884,7 +884,7 @@ def match_film_metadata():
         'Oceans 11': "Ocean's Eleven",
         'Chappie': None,
         'Kung Fu Panda': 'Kung Fu Panda',
-        'Her': 'Her',
+        'Her': None,
         'X-Men Days of Future Past': None,
         'How to Train Your Dragon 2': None,
         'Carol': 'Carol',
@@ -899,7 +899,7 @@ def match_film_metadata():
         'Short Term 12': None,
         'Elizabeth': 'Elizabeth',
         'American Psycho': 'American Psycho',
-        'Men In Black': 'Men In Black',
+        'Men In Black': 'Men in Black',
         'This Is 40': None,
         'The Grand Budapest Hotel': None,
         'Zipper': None,
@@ -938,10 +938,11 @@ def match_film_metadata():
         for row in rows:
             title = row[0]
             title = title.encode('utf-8')
-            m = re.match(r'(.+)\(\d+\)?$', title)
+            m = re.match(r'(.+) \(\d+\)?$', title)
             title = m.group(1)
 
             if title in manually_matched:
+                print title, 'TITLE IN MANUALLY MATCHED'
                 match = manually_matched[title]
                 if match:
                     result[title] = movie2metadata[match]
@@ -1093,7 +1094,7 @@ if __name__ == '__main__':
     elif cmdline.create_videopath_db:
         create_videopath_db()
     elif cmdline.match_film_metadata:
-        pprint(match_film_metadata(cmdline.vids_dir))
+        pprint(match_film_metadata())
     elif cmdline.get_shorts_metadata:
         pprint(get_shorts_metadata())
     elif cmdline.create_videometadata_db:
