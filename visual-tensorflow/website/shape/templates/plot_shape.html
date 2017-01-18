@@ -49,7 +49,7 @@
             // Clusters View - intialize
             var clusters = {};
             clusters.format = 'film';
-            clusters.dynamicRange = false;
+            clusters.dynamicRange = true;
             clusters.k = Object.keys(data.clusters.films)[0];
             clusters.focusOnKth = 'all';
             this.clusters = clusters;
@@ -111,6 +111,7 @@
                         guiFormatParams = datgui.oneVideo.shorts;
                         windowMax = 150;
                     }
+                    // Add controllers back
                     guiW = gui.add(guiFormatParams, 'windowSize').min(1).max(windowMax).step(1);
                     guiV = gui.add(guiFormatParams, 'video', data.format2titles[format]);
                     addFinishChangeHandlers(guiW, guiV);
@@ -125,7 +126,19 @@
                     });
                     guiV.onFinishChange(function(title) {
                         var windowSize = datgui.oneVideo.format == 'film' ? datgui.oneVideo.films.windowSize : datgui.oneVideo.shorts.windowSize;
-                        getUpdatedPreds(title,windowSize);
+
+                        // Window size may be too big for video
+                        // Right now, in views.py, pred_len is calculated as the number of frame files
+                        // However the actual length is ignores the credits
+                        // Thus, this should be an upper bound
+                        var nextVideoLen = data.title2pred_len[datgui.oneVideo.format + 's'][title];
+                        if (nextVideoLen < windowSize) {
+                            console.log('Video too short for current window size, changing window size to 1/4 video length');
+                            datgui.oneVideo[datgui.oneVideo.format + 's'].windowSize = Math.round(windowSize / 4);
+                            guiW.updateDisplay();
+                        }
+
+                        getUpdatedPreds(title, datgui.oneVideo[datgui.oneVideo.format + 's'].windowSize);
                     });
                 }
                 addFinishChangeHandlers(guiW, guiV);
@@ -411,56 +424,29 @@
             }
 
             // Display assignments if focusOnKth
-            // TODO: show closest points -- right now only distances for shorts computed, hence the if
+            // TODO: show closest points
             // For films - just show first 10
             if (datgui.clusters.focusOnKth != 'all') {
-                if (datgui.clusters.format == 'film') {
-                    var kthClustering = data.clusters[datgui.clusters.format + 's'][datgui.clusters.k];
-                    var assignments = kthClustering.assignments[datgui.clusters.focusOnKth];
-                    for (var i = 0; i < assignments.length; i++) {
-                        var title = data.ts_idx2title[datgui.clusters.format + 's'][assignments[i]];
-                        var series = data.ts[datgui.clusters.format + 's'][assignments[i]];
-                        console.log(title);
+                var clusters = data.clusters[datgui.clusters.format + 's'];
+                var closestMemberIndices = clusters[datgui.clusters.k].closest[datgui.clusters.focusOnKth];
+                console.log(closestMemberIndices);
+                for (var i = 0; i < closestMemberIndices.length; i++) {
+                    var idx = closestMemberIndices[i];
+                    var title = data.ts_idx2title[datgui.clusters.format + 's'][idx];
+                    var series = data.ts[datgui.clusters.format + 's'][idx];
+                    console.log(title);
 
-                        var hex = getRandomHexColor();
-                        var rgb = hexToRGB(hex);
-                        var rgba = getRGBA(rgb.r, rgb.g, rgb.b, 0.2);
-                        dataset.push({
-                            label: title,
-                            data: downsampleTimeseries(series, DOWNSAMPLE_RATE),
-                            borderWidth: 1,
-                            borderColor: rgba,
-                            backgroundColor: rgba,
-                            fill: false
-                        });
-
-                        // Too many lines!
-                        if (i == 10) {
-                            break;
-                        }
-                    }
-                } else if (datgui.clusters.format == 'short') {
-                    var closestMemberIndices = data.clusters.shorts[datgui.clusters.k].closest[datgui.clusters.focusOnKth];
-                    console.log(closestMemberIndices);
-//                    for (var idx in closestMemberIndices) {
-                    for (var i = 0; i < closestMemberIndices.length; i++) {
-                        var idx = closestMemberIndices[i];
-                        var title = data.ts_idx2title[datgui.clusters.format + 's'][idx];
-                        var series = data.ts[datgui.clusters.format + 's'][idx];
-                        console.log(title);
-
-                        var hex = getRandomHexColor();
-                        var rgb = hexToRGB(hex);
-                        var rgba = getRGBA(rgb.r, rgb.g, rgb.b, 0.2);
-                        dataset.push({
-                            label: title,
-                            data: downsampleTimeseries(series, DOWNSAMPLE_RATE),
-                            borderWidth: 1,
-                            borderColor: rgba,
-                            backgroundColor: rgba,
-                            fill: false
-                        });
-                    }
+                    var hex = getRandomHexColor();
+                    var rgb = hexToRGB(hex);
+                    var rgba = getRGBA(rgb.r, rgb.g, rgb.b, 0.2);
+                    dataset.push({
+                        label: title,
+                        data: downsampleTimeseries(series, DOWNSAMPLE_RATE),
+                        borderWidth: 1,
+                        borderColor: rgba,
+                        backgroundColor: rgba,
+                        fill: false
+                    });
                 }
             }
             var labels = [];

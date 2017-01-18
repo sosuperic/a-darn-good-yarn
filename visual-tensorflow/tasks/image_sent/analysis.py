@@ -4,6 +4,7 @@
 # TODO: what to do about shorts, should we filter by length, idk
 
 import argparse
+import hdbscan
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pylab as plt
@@ -16,8 +17,11 @@ import sqlite3
 # from core.predictions.spatio_time_cluster import *
 from core.predictions.ts_cluster import *
 from core.predictions.hierarchical_cluster import *
-from core.predictions.utils import smooth
+from core.predictions.utils import smooth, DTWDistance, LB_Keogh
 from core.utils.utils import setup_logging, get_credits_idx
+
+# For local vs shannon
+PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
 
 OUTPUTS_PATH = 'outputs/cluster/'
 VIDEOS_PATH = 'data/videos'
@@ -35,7 +39,7 @@ class Analysis(object):
     ####################################################################################################################
     # Cluster
     ####################################################################################################################
-    def cluster_timeseries(self, data, method, k):
+    def cluster_timeseries(self, data, method, k=None):
         """
         Cluster data and save outputs
 
@@ -49,19 +53,12 @@ class Analysis(object):
             self.cluster_timeseries_dtw(data, k)
         elif method == 'hierarchical':
             self.cluster_timeseries_hierarchical(data)
+        elif method == 'hdbscan':
+            self.cluster_timeseries_hdbscan(data)
         else:
             self.logger.info('Method unknown: {}'.format(method))
 
         self.logger.info('Done clustering')
-
-    def cluster_timeseries_hierarchical(self, data):
-        """
-        Parameters
-        ----------
-        data: np of dimension [num_timeseries, max_len]
-        """
-        clusterer = HierarchicalCluster()
-        clusterer.cluster(data)
 
     def cluster_timeseries_dtw(self, data, k=4):
         """
@@ -101,6 +98,91 @@ class Analysis(object):
             self.logger.info('Centroid {}: {} series'.format(centroid_idx, len(assignments)))
 
         # clusterer.plot_centroids()
+
+    def cluster_timeseries_hierarchical(self, data):
+        """
+        Parameters
+        ----------
+        data: np of dimension [num_timeseries, max_len]
+        """
+        clusterer = HierarchicalCluster()
+        clusterer.cluster(data)
+
+    def cluster_timeseries_hdbscan(self, data):
+        """
+
+        Options
+        -------
+        1) Directly computing on [num_samples, timeseries]
+        2) Compute distance matrix using LB_Keogh to create [num_samples,
+        """
+        # for d in LB_Keogh()
+        self.logger.info('Clustering using HDBSCAN')
+
+        use_dist_matrix = True
+        if use_dist_matrix:
+            dist_matrix = np.zeros([len(data), len(data)])
+            for i in range(len(data)):
+                for j in range(len(data)):
+                    if i == j:
+                        continue
+                    else:
+                        dist_matrix[i][j] = LB_Keogh(data[i], data[j], 5)
+            data = dist_matrix
+
+
+
+        clusterer = hdbscan.HDBSCAN(min_cluster_size=10, metric='euclidean')
+        clusterer.fit(data)
+
+        print clusterer.labels_
+
+        print 'num_clusters', clusterer.cluster_persistence_.shape[0]
+        print 'cluster persistence', clusterer.cluster_persistence_
+
+        # tmp:
+        if len(data) < 1000: # films
+            with open('hdbscan_films_clusterer.pkl', 'w') as f:
+                pickle.dump(clusterer, f, protocol=2)
+        else: # shorts
+            with open('hdbscan_shorts_clusterer.pkl', 'w') as f:
+                pickle.dump(clusterer, f, protocol=2)
+
+        # Robust sinkle linkage (hierarchical?)
+        # import hdbscan
+        #
+        clusterer = hdbscan.RobustSingleLinkage(cut=0.125, k=7)
+        cluster_labels = clusterer.fit_predict(data)
+        hierarchy = clusterer.cluster_hierarchy_
+        alt_labels = hierarchy.get_clusters(0.100, 5)
+        hierarchy.plot()
+        plt.savefig('tmp.png')
+
+        # for lab in cluster_labels:
+        #     print cluster_labels
+        # #
+        # clusterer = HierarchicalCluster()
+        # clusterer.cluster(data)
+
+
+
+        # Save outputs
+        # self.logger.info('Saving centroids, assignments, figure')
+        # params_str = CLUSTERS_STR.format(
+        #     os.path.basename(self.root_videos_dirpath), self.n,
+        #     self.norm_mags, k, self.window_size, self.downsample_rate,
+        #     self.max_num_frames,
+        #     self.pred_fn[:-4])      # remove .csv
+        # with open(os.path.join(OUTPUTS_PATH, 'data', 'centroids_{}.pkl'.format(params_str)), 'w') as f:
+        #     pickle.dump(clusterer.centroids, f, protocol=2)
+        # with open(os.path.join(OUTPUTS_PATH, 'data', 'assignments_{}.pkl'.format(params_str)), 'w') as f:
+        #     pickle.dump(clusterer.assignments, f, protocol=2)
+        # # Plots
+        # for i, c in enumerate(clusterer.centroids):
+        #     plt.plot(c, label=i)
+        # plt.legend()
+        # plt.savefig(os.path.join(OUTPUTS_PATH, 'imgs', 'dtw_{}.png'.format(params_str)))
+        # plt.gcf().clear()               # clear figure so for next k
 
     ####################################################################################################################
     # Preprocess data
@@ -306,7 +388,8 @@ class Analysis(object):
         self.logger.info('Finding all directories with frames/ and preds/ folders')
         vidpaths = []
         for root, dirs, files in os.walk(starting_dir):
-            if ('preds' in os.listdir(root)) and ('frames' in os.listdir(root)):
+            if ('preds' in dirs) and ('frames' in dirs) \
+                    and (PRED_FN in os.listdir(os.path.join(root, 'preds'))):
                 vidpaths.append(root)
 
         return vidpaths
@@ -326,12 +409,12 @@ if __name__ == '__main__':
 
     # Cluster
     parser.add_argument('--norm_mags', dest='norm_mags', action='store_true', default=False)
-    parser.add_argument('-m', '--method', dest='method', default='dtw', help='dtw,hierarchical')
+    parser.add_argument('-m', '--method', dest='method', default='dtw', help='dtw,hierarchical,hdbscan')
     parser.add_argument('--root_videos_dir', dest='root_videos_dir', default=VIDEOS_PATH,
                         help='folder to traverse for predictions')
     parser.add_argument('-k', dest='k', default='4', help='list of comma-separated k to evaluate')
     parser.add_argument('-w', dest='window_size', type=int, default=1000, help='window size for smoothing predictions')
-    parser.add_argument('--pred_fn', dest='pred_fn', default='sent_biclass_19.csv', help='pred file name')
+    parser.add_argument('--pred_fn', dest='pred_fn', default=PRED_FN, help='pred file name')
     parser.add_argument('-ds', dest='downsample_rate', type=int, default=3, help='downsample rate')
     parser.add_argument('--max_num_frames', dest='max_num_frames', type=int, default=float('inf'),
                         help='filter out videos with more frames than this. May be used with shorts to filter out'
@@ -346,9 +429,14 @@ if __name__ == '__main__':
     if cmdline.cluster:
         ts = analysis.prepare_timeseries(cmdline.root_videos_dir, cmdline.norm_mags, cmdline.window_size,
                                            cmdline.pred_fn, cmdline.downsample_rate, cmdline.max_num_frames)
-        for k in cmdline.k.split(','):
-            print '=' * 100
-            analysis.cluster_timeseries(ts, cmdline.method, int(k))
+
+        if cmdline.method == 'dtw':
+            for k in cmdline.k.split(','):
+                print '=' * 100
+                analysis.cluster_timeseries(ts, cmdline.method, int(k))
+        elif cmdline.method == 'hdbscan':
+            print 'hdbscan'
+            analysis.cluster_timeseries(ts, cmdline.method)
 
     elif cmdline.compute_and_save_distances:
         for k in cmdline.k.split(','):

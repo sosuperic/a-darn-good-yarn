@@ -2,7 +2,7 @@ import matplotlib.pylab as plt
 import numpy as np
 import random
 
-from utils import DTWDistance
+from utils import DTWDistance, LB_Keogh
 
 class ts_cluster(object):
     def __init__(self,num_clust):
@@ -31,7 +31,7 @@ class ts_cluster(object):
                 min_dist=float('inf')
                 closest_clust=None
                 for c_ind,j in enumerate(self.centroids):
-                    if self.LB_Keogh(i,j,5)<min_dist:
+                    if LB_Keogh(i,j,5)<min_dist:
                         cur_dist=DTWDistance(i,j,w)
                         if cur_dist<min_dist:
                             min_dist=cur_dist
@@ -63,22 +63,4 @@ class ts_cluster(object):
         for i in self.centroids:
             plt.plot(i)
         plt.show()
-
-    def LB_Keogh(self,s1,s2,r):
-        '''
-        Calculates LB_Keough lower bound to dynamic time warping. Linear
-        complexity compared to quadratic complexity of dtw.
-        '''
-        LB_sum=0
-        for ind,i in enumerate(s1):
-
-            lower_bound=min(s2[(ind-r if ind-r>=0 else 0):(ind+r)])
-            upper_bound=max(s2[(ind-r if ind-r>=0 else 0):(ind+r)])
-
-            if i>upper_bound:
-                LB_sum=LB_sum+(i-upper_bound)**2
-            elif i<lower_bound:
-                LB_sum=LB_sum+(i-lower_bound)**2
-
-        return np.sqrt(LB_sum)
     

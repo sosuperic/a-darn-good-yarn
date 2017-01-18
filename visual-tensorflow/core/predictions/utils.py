@@ -51,3 +51,21 @@ def DTWDistance(s1, s2, w=None):
                 DTW[(i, j)] = dist + min(DTW[(i-1, j)],DTW[(i, j-1)], DTW[(i-1, j-1)])
 
     return np.sqrt(DTW[len(s1)-1, len(s2)-1])
+
+def LB_Keogh(s1, s2, r):
+    '''
+    Calculates LB_Keough lower bound to dynamic time warping. Linear
+    complexity compared to quadratic complexity of dtw.
+    '''
+    LB_sum=0
+    for ind,i in enumerate(s1):
+
+        lower_bound=min(s2[(ind-r if ind-r>=0 else 0):(ind+r)])
+        upper_bound=max(s2[(ind-r if ind-r>=0 else 0):(ind+r)])
+
+        if i>upper_bound:
+            LB_sum=LB_sum+(i-upper_bound)**2
+        elif i<lower_bound:
+            LB_sum=LB_sum+(i-lower_bound)**2
+
+    return np.sqrt(LB_sum)

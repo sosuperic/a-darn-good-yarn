@@ -1,4 +1,10 @@
 # Controller for viewing shape 
+# TODO for refactor:
+# 1) Have a formats = ['films', 'shorts'], take care of some redundancy that way
+# 2) Consolidate data structures? clusters, ts, ts_idx2title, etc. all have 'films/shorts' as first key
+# maybe just do data = {}, for format in formats: data['format] = {}
+# And then attach the clusters, ts, etc.
+
 
 from collections import defaultdict
 import json
@@ -40,11 +46,11 @@ title2vidpath = {}
 format2titles = defaultdict(list)
 title2format = {}
 
-clusters = {}
-ts = {}
-ts_idx2title = {}
-ts_dists = {}
-fmt2k2c2top_ts_idx = {}
+clusters = {}           # films/shorts -> key (k) -> {assignments: k-idx: array, centroids: k-idx: array, closest: k-idx: array of member_indices}
+ts = {}                 # films/shorts -> list of arrays
+ts_idx2title = {}       # films/shorts -> idx -> title
+title2pred_len = {}     # films/shorts -> title -> len
+# fmt2k2c2top_ts_idx = {}
 
 # Used for initial curve to display
 cur_format = None
@@ -132,7 +138,9 @@ def setup_initial_data():
     # Set time series, cluster related data
     ####################################################################################################################
     # All time series
-    global ts, ts_idx2title
+    global ts, ts_idx2title, title2pred_len
+    # NOTE: all the time seris are of the same length -- this is the saved interpolated time series used during
+    # clustering. These are used to display the closest movies in the clusters view
     ts['films'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FILMS_FN), 'r'))
     ts['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_FN), 'r'))
     # make it serializable
@@ -142,9 +150,18 @@ def setup_initial_data():
     ts_idx2title['films'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FILMS_IDX2TITLE_FN), 'r'))
     ts_idx2title['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_IDX2TITLE_FN), 'r'))
 
+    # For one movie view
+    # title2pred_len, so we can adjust window size when changing datgui titles (if cur window size is too big)
+    title2pred_len['films'] = {}
+    title2pred_len['shorts'] = {}
+    for format, d in ts_idx2title.items():
+        for ts_idx, title in d.items():
+            if title in title2vidpath:
+                vid_framespath = os.path.join(title2vidpath[title], 'frames')
+                title2pred_len[format][title] = len(os.listdir(vid_framespath))
 
     # TODO: clean up and refactor following
-    global clusters, ts_dists
+    global clusters
     # Films
     clusters['films'] = {}
     ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -152,39 +169,20 @@ def setup_initial_data():
         k = str(k)          # use string so it's treated as a js Object instead of an array in template
         centroids_fn = FILMS_CENTROIDS_FN.format(k)
         assignments_fn = FILMS_ASSIGNMENTS_FN.format(k)
+        ts_dists_fn = TS_DISTS_FILMS_FN.format(k)
         centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
         assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
-        if os.path.exists(centroids_path) and os.path.exists(assignments_path):
+        ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
+        if os.path.exists(centroids_path) and os.path.exists(assignments_path) and os.path.exists(ts_dists_path):
             clusters['films'][k] = {}
             with open(centroids_path) as f:
                 clusters['films'][k]['centroids'] = pickle.load(f)
             with open(assignments_path) as f:
                 clusters['films'][k]['assignments'] = pickle.load(f)
 
-            # ts_dists = compute_distances(clusters['films'][str(k)]['centroids'], clusters['films'][str(k)]['assignments'])
-            # clusters['films'][str(k)]['ts_dists'] = ts_dists
-        else:
-            print 'Centroids/assignments path doesnt exist:\n{}\n{}'.format(centroids_path, assignments_path)
-
-    # Shorts
-    clusters['shorts'] = {}
-    ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    for k in ks:
-        k = str(k)          # use string so it's treated as a js Object instead of an array in template
-        centroids_fn = SHORTS_CENTROIDS_FN.format(k)
-        assignments_fn = SHORTS_ASSIGNMENTS_FN.format(k)
-        centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
-        assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
-        if os.path.exists(centroids_path) and os.path.exists(assignments_path):
-            clusters['shorts'][k] = {}
-            with open(centroids_path) as f:
-                clusters['shorts'][k]['centroids'] = pickle.load(f)
-            with open(assignments_path) as f:
-                clusters['shorts'][k]['assignments'] = pickle.load(f)
-
             # TS Distances to centroids
             # ts_dists: dict, key is int (centroid_idx), value = dict (key is member_idx, value is distance)
-            ts_dists_fn = TS_DISTS_SHORTS_FN.format(k)
+            ts_dists_fn = TS_DISTS_FILMS_FN.format(k)
             ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
             if os.path.exists(ts_dists_path):
                 with open(ts_dists_path) as f:
@@ -193,13 +191,48 @@ def setup_initial_data():
                 for centroid_idx, dists in kdists.items():
                     sorted_member_indices = sorted(dists, key=dists.get)
                     top_n = sorted_member_indices[:10]
+                    # top_n_series = [ts['films'][m_idx] for m_idx in top_n]
                     centroid2closest[centroid_idx] = top_n
-                clusters['shorts'][k]['closest'] = centroid2closest
-            else:
-                print 'ts_dists path doesnt exist:\n{}'.format(ts_dists_path)
+                clusters['films'][k]['closest'] = centroid2closest
 
         else:
-            print 'Centroids/assignments path doesnt exist:\n{}\n{}'.format(centroids_path, assignments_path)
+            print 'Centroids/assignments/ts_dists path doesnt exist:\n{}\n{}\n{}'.format(
+                centroids_path, assignments_path, ts_dists_path)
+
+    # Shorts
+    clusters['shorts'] = {}
+    ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    for k in ks:
+        k = str(k)          # use string so it's treated as a js Object instead of an array in template
+        centroids_fn = SHORTS_CENTROIDS_FN.format(k)
+        assignments_fn = SHORTS_ASSIGNMENTS_FN.format(k)
+        ts_dists_fn = TS_DISTS_SHORTS_FN.format(k)
+        centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
+        assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
+        ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
+        if os.path.exists(centroids_path) and os.path.exists(assignments_path) and os.path.exists(ts_dists_path):
+            clusters['shorts'][k] = {}
+            with open(centroids_path) as f:
+                clusters['shorts'][k]['centroids'] = pickle.load(f)
+            with open(assignments_path) as f:
+                clusters['shorts'][k]['assignments'] = pickle.load(f)
+
+            # TS Distances to centroids
+            # ts_dists: dict, key is int (centroid_idx), value = dict (key is member_idx, value is distance)
+            if os.path.exists(ts_dists_path):
+                with open(ts_dists_path) as f:
+                    kdists = pickle.load(f)      # key is ts_index, value is distance to its centroid
+                centroid2closest = {}
+                for centroid_idx, dists in kdists.items():
+                    sorted_member_indices = sorted(dists, key=dists.get)
+                    top_n = sorted_member_indices[:10]
+                    # top_n_series = [ts['shorts'][m_idx] for m_idx in top_n]
+                    centroid2closest[centroid_idx] = top_n       # TODO: return series of index to series
+                clusters['shorts'][k]['closest'] = centroid2closest
+
+        else:
+            print 'Centroids/assignments/ts_dists path doesnt exist:\n{}\n{}\n{}'.format(
+                centroids_path, assignments_path, ts_dists_path)
 
 
 
@@ -240,7 +273,8 @@ def shape():
             'framepaths': cur_vid_framepaths, 'preds': cur_vid_preds,
             'clusters': clusters,
             'ts_idx2title': ts_idx2title,
-            'ts': ts}
+            'ts': ts,
+            'title2pred_len': title2pred_len}
 
     return render_template('plot_shape.html', data=json.dumps(data))
 
@@ -252,6 +286,7 @@ def get_preds_and_frames(title, window_len):
     global title2vidpath, \
         cur_format, cur_title, cur_pd_df, cur_vid_framepaths
     if title != cur_title:
+        title = title.encode('utf-8')
         cur_format = title2format[title]
         cur_title = title
         cur_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
