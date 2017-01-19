@@ -1,0 +1,44 @@
+Proposed Initial approach:
+1) Use MFCC(like) features on 30 second snippet of audio to predict [major/minor, arousal?, valence?]
+2) Getting audio (the x)
+- Use segents_timbre and figure out how to extract segments_timbre for unknown track
+- Download preview clips from MSD (following keunwoochoi and mlachmish repos) 
+    - http://labrosa.ee.columbia.edu/millionsong/pages/tasks-demos  --> preview audio
+3) Getting labels (the y)
+- Either from MSD directly
+- Maybe tags from last.fm
+4) Notes, considerations
+- Can we ignore songs that have vocals?
+- Can we remove vocals from songs? 
+    - http://stackoverflow.com/questions/3673042/algorithm-to-remove-vocal-from-sound-track
+- Can we detect when movie snippet has dialogue? 
+
+
+Magnatagatune:
+30,000 songs: 30 second audio clips, 180 binary labels for each ('bongos', 'heavy', etc.)
+
+MSD:
+1 million songs: only metadata, maybe segments_timbre (MFCC-like features for each segment), but how to extract same features for unknown song?
+
+Last.fm:
+tags and similar songs
+
+Keyword:
+emotional content of music
+m
+
+Some posts:
+https://medium.com/cuepoint/visualizing-hundreds-of-my-favorite-songs-on-spotify-fe50c94b8af3#.cd4pffn5t
+http://willdrevo.com/fingerprinting-and-audio-recognition-with-python/
+
+Some papers:
+http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.128.5736&rep=rep1&type=pdf
+https://pdfs.semanticscholar.org/1b45/fac1168c641dfe00dc5408b052969895b9a4.pdf
+https://github.com/keunwoochoi/music-auto_tagging-keras
+- trained on Magnatagatune + MSD
+    - CNN paper trains on 29.1-s from Magnatune, but CRNN paper (which is later) says it uses 214,284 clips (30-60s preview clips) 
+
+Repos:
+- https://github.com/mlachmish/MusicGenreClassification
+    - Downloads preview clips for MSD
+- https://github.com/keunwoochoi/magnatagatune-list

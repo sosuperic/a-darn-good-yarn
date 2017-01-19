@@ -10,6 +10,10 @@ vizsent/Sentibank
 vizsent/models
 vizsent/vids
 vizsent/soumith/models
+vizsent_deprecated/Sentibank
+vizsent_deprecated/models
+vizsent_deprecated/vids
+vizsent_deprecated/soumith/models
 
 # Training-related
 *logs/

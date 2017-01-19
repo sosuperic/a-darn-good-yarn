@@ -1,0 +1,559 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Plot Shape</title>
+    <script src="../static/jslibs/dat.gui.js"></script>
+    <script src="/static/jslibs/jquery.min.js"></script>
+    <script src="../static/jslibs/Chart.bundle.js"></script>
+    <!-- <link rel="stylesheet" href="css/styles.css?v=1.0"> -->
+</head>
+
+<body>
+    <div id="plot"></div>
+    <div width="800" height="400">
+        <div style="max-width:800px; max-height:400px">
+            <canvas id="chart" width="100%"></canvas>
+        </div>
+    </div>
+    <div style="padding-left:275px;padding-top:50px" id="frame"></div>
+
+    <script type="text/javascript">
+        /***************************************************************************************************************
+        * Global variables
+        ***************************************************************************************************************/
+        var data = {{ data|safe }};     // load data from Flask using Jinja
+        var chart;
+        console.log(data);
+
+        /***************************************************************************************************************
+        * Set up dat gui
+        ***************************************************************************************************************/
+        var DatGui = function() {
+            // Default values
+            this.view = 'One video';
+
+            // One Video View - intialize
+            var oneVideo = {};
+            oneVideo.format = 'film';
+            oneVideo.dynamicRange = true;
+            oneVideo.films = {};
+            oneVideo.films.windowSize = 600;
+            oneVideo.films.video = data.format2titles['film'][0];
+            oneVideo.shorts = {};
+            oneVideo.shorts.windowSize = 60;
+            oneVideo.shorts.video = data.format2titles['short'][0];
+            this.oneVideo = oneVideo;
+
+            // Clusters View - intialize
+            var clusters = {};
+            clusters.format = 'film';
+            clusters.dynamicRange = true;
+            clusters.k = Object.keys(data.clusters.films)[0];
+            clusters.focusOnKth = 'all';
+            this.clusters = clusters;
+        };
+
+        /***************************************************************************************************************
+        * On window load
+        ***************************************************************************************************************/
+        window.onload = function() {
+            var datgui = new DatGui();
+            var gui = new dat.GUI({width: 400});
+
+            /***********************************************************************************************************
+             * Manage views
+             **********************************************************************************************************/
+            var guiView = gui.add(datgui, 'view', ['One video', 'Clusters']);
+
+            guiView.onFinishChange(function(view) {
+                removeViewSpecificGUI();
+                if (view == 'One video') {
+                    addOneVideoGUI();
+                    drawOneVideo(datgui);
+                    showImage("../static/videos/" + data.framepaths[0], 256, 256, '');
+                } else if (view == 'Clusters') {
+                    removeFrame();
+                    addClustersGUI();
+                    drawClusters(datgui);
+                }
+            });
+
+            // Remove all but the first controller (the view controller)
+            function removeViewSpecificGUI() {
+                numControllers = gui.__controllers.length;
+                for (var i = 0; i < numControllers - 1; i++) {
+                    gui.__controllers[1].remove();
+                }
+            }
+
+            /***********************************************************************************************************
+             * One video view
+             **********************************************************************************************************/
+            function addOneVideoGUI() {
+                // Set ranges, values
+                var guiFormats = gui.add(datgui.oneVideo, 'format', ['film', 'short']);
+                var guiR = gui.add(datgui.oneVideo, 'dynamicRange');
+                var guiW = gui.add(datgui.oneVideo.films, 'windowSize').min(1).max(1500).step(1);
+                var guiV = gui.add(datgui.oneVideo.films, 'video', data.format2titles['film']);
+
+                // Dat Gui Handlers
+                guiFormats.onFinishChange(function(format) {
+                    // Remove list of videos controller; add titles for that format; swap order of controllers to get back in place
+                    gui.__controllers[3].remove();  // window
+                    gui.__controllers[3].remove();  // video
+                    var guiFormatParams, windowMax;
+                    if (format == 'film') {
+                        guiFormatParams = datgui.oneVideo.films;
+                        windowMax = 1500;
+                    } else if (format == 'short') {
+                        guiFormatParams = datgui.oneVideo.shorts;
+                        windowMax = 150;
+                    }
+                    // Add controllers back
+                    guiW = gui.add(guiFormatParams, 'windowSize').min(1).max(windowMax).step(1);
+                    guiV = gui.add(guiFormatParams, 'video', data.format2titles[format]);
+                    addFinishChangeHandlers(guiW, guiV);
+
+                    // Get new predictions
+                    getUpdatedPreds(guiFormatParams.video, guiFormatParams.windowSize); }
+                );
+                function addFinishChangeHandlers(guiW, guiV) {
+                    guiW.onFinishChange(function(windowSize) {
+                        var title = datgui.oneVideo.format == 'film' ? datgui.oneVideo.films.video : datgui.oneVideo.shorts.video;
+                        getUpdatedPreds(title, windowSize);
+                    });
+                    guiV.onFinishChange(function(title) {
+                        var windowSize = datgui.oneVideo.format == 'film' ? datgui.oneVideo.films.windowSize : datgui.oneVideo.shorts.windowSize;
+
+                        // Window size may be too big for video
+                        // Right now, in views.py, pred_len is calculated as the number of frame files
+                        // However the actual length is ignores the credits
+                        // Thus, this should be an upper bound
+                        var nextVideoLen = data.title2pred_len[datgui.oneVideo.format + 's'][title];
+                        if (nextVideoLen < windowSize) {
+                            console.log('Video too short for current window size, changing window size to 1/4 video length');
+                            datgui.oneVideo[datgui.oneVideo.format + 's'].windowSize = Math.round(windowSize / 4);
+                            guiW.updateDisplay();
+                        }
+
+                        getUpdatedPreds(title, datgui.oneVideo[datgui.oneVideo.format + 's'].windowSize);
+                    });
+                }
+                addFinishChangeHandlers(guiW, guiV);
+                guiR.onFinishChange(function() { drawOneVideo(datgui); });
+            }
+
+            /***********************************************************************************************************
+             * Clusters view
+             **********************************************************************************************************/
+            function addClustersGUI() {
+                // Set ranges, initial values
+                var guiFormats = gui.add(datgui.clusters, 'format', ['film', 'short']);
+                var guiR = gui.add(datgui.clusters, 'dynamicRange');
+                var formatKClusters = data.clusters[datgui.clusters.format + 's'];
+                var guiK = gui.add(datgui.clusters, 'k', Object.keys(formatKClusters));
+                var guiFocusOnKth = gui.add(datgui.clusters, 'focusOnKth', ['all'].concat(getKIndices(datgui.clusters.k)));
+                // Handlers
+                guiFormats.onFinishChange(function(format) {
+                    // Remove k-related controllers to get list of available k's for that format
+                    gui.__controllers[4].remove();
+                    gui.__controllers[3].remove();
+                    var formatKClusters;
+                    if (format == 'film') {
+                        formatKClusters = data.clusters[datgui.clusters.format + 's'];
+
+                    } else if (format == 'short') {
+                        formatKClusters = data.clusters[datgui.clusters.format + 's'];
+                    }
+                    datgui.clusters.k =  Object.keys(formatKClusters)[0];
+                    guiK = gui.add(datgui.clusters, 'k', Object.keys(formatKClusters));
+                    datgui.clusters.focusOnKth =  'all';
+                    guiFocusOnKth = gui.add(datgui.clusters, 'focusOnKth', ['all'].concat(getKIndices(datgui.clusters.k)));
+
+                    addFinishChangeHandlers(guiK, guiFocusOnKth);
+                    drawClusters(datgui);
+                });
+                function addFinishChangeHandlers(guiK, guiFocusOnKth) {
+                    guiK.onFinishChange(function() {
+                        // Remove and add focusOnKth to have proper range
+                        gui.__controllers[4].remove();
+                        datgui.clusters.focusOnKth =  'all';
+                        guiFocusOnKth = gui.add(datgui.clusters, 'focusOnKth', ['all'].concat(getKIndices(datgui.clusters.k)));
+
+                        addFinishChangeHandlers(guiK, guiFocusOnKth);
+                        drawClusters(datgui);
+                    });
+                    guiFocusOnKth.onFinishChange(function() { drawClusters(datgui); });
+                }
+                addFinishChangeHandlers(guiK, guiFocusOnKth);
+                guiR.onFinishChange(function() { drawClusters(datgui); });
+
+                // Return array [0,k-1] (i.e. indices of centroids)
+                function getKIndices(k) {
+                    var indices = [];
+                    for (var i = 0; i < k; i++) {
+                        indices.push(i);
+                    }
+                    return indices
+                }
+            }
+
+
+            /***********************************************************************************************************
+             * Draw initial
+             **********************************************************************************************************/
+            addOneVideoGUI();
+            showImage("../static/videos/" + data.framepaths[0], 256, 256, '');
+            drawOneVideo(datgui);
+
+            /***********************************************************************************************************
+             * Some other handlers (should probably be moved somewhere)
+             **********************************************************************************************************/
+            function getUpdatedPreds(title, windowSize) {
+                $.ajax({
+                    url: '/api/pred/' + title + '/' + windowSize,
+                    type: 'GET',
+                    success: function(resp) {
+                        reset_and_redraw(resp, redraw_callback);
+                    },
+                    error: function(xhr, status, err) {
+                        console.log(err);
+                    }
+                })
+            }
+            function reset_and_redraw(resp, redraw_callback) {
+                data.preds = resp.preds;
+                data.framepaths = resp.framepaths;
+                redraw_callback();
+            }
+            function redraw_callback() {
+                showImage("/static/videos/" + data.framepaths[0], 256, 256, '');
+                drawOneVideo(datgui);
+            }
+        }
+
+
+        /***************************************************************************************************************
+        * Utility functions
+        ***************************************************************************************************************/
+        function showImage(src, width, height, alt) {
+            var frameElement = document.getElementById("frame");
+            if (frameElement.firstChild) {      // if image element already exists
+                frameElement.firstChild.src = src;
+            } else {                            // make element and append to DOM
+                var img = document.createElement("img");
+                img.src = src;
+                img.width = width;
+                img.height = height;
+                img.alt = alt;
+                frameElement.appendChild(img);
+            }
+        }
+        function removeFrame() {
+            $('img').remove();
+        }
+        // Downsample time series in order to prevent aliasing
+        function downsampleTimeseries(timeseries, downsample_rate) {
+            var downsampled = [];
+            for (var i = 0; i < timeseries.length; i += downsample_rate) {
+                downsampled.push(timeseries[i]);
+            }
+            return downsampled;
+        }
+        function openInNewTab(url) {
+            var win = window.open(url, '_blank');
+            // win.focus();
+        }
+
+        /***************************************************************************************************************
+        * Draw chart for one image view - show images on hover
+        ***************************************************************************************************************/
+        function drawOneVideo(datgui) {
+            var DOWNSAMPLE_RATE = datgui.oneVideo.format == 'film' ? 1 : 1; // not downsampling right now
+
+            // Each label is the timestamp hr:min:sec in the video
+            function getLabels(data) {
+                var numSec = data.length;
+                var labels = [];
+                for (var i = 0; i < numSec; i++) {
+                  labels.push(formatSeconds(i));
+                }
+                return labels;
+            }
+            function formatSeconds(seconds) {
+                var date = new Date(null);
+                date.setSeconds(seconds); // specify value for SECONDS here
+                return date.toISOString().substr(11, 8);
+            }
+
+            // Each object in dataset array corresponds to one line
+            // e.g. one line for each emotion
+            var dataset = [];
+            for (var key in data.preds) {
+                dataset.push({
+                    label: key,
+                    borderWidth: 0.1,
+                    data: downsampleTimeseries(data.preds[key], DOWNSAMPLE_RATE),
+                    backgroundColor: "rgba(15, 171, 182, 0.75)"
+                })
+            }
+            // Use first set
+            var labels = getLabels(data.preds[Object.keys(data.preds)[0]]);
+            labels = downsampleTimeseries(labels, DOWNSAMPLE_RATE);
+            var chartData = {
+                labels: labels,
+                datasets: dataset
+            };
+
+            // Options
+            var options = {
+                global: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                },
+                elements: {   // Don't show individual points on line graph
+                    point:{
+                        radius: 0
+                    }
+                },
+                tooltips: {     // tooltip for points on current mouse x-axis position
+                    mode: 'index',
+                    intersect: false
+                },
+                scales: {
+                    xAxes: [{
+                        ticks: {
+                          autoSkipPadding: 50
+                        }
+                    }],
+                    yAxes: datgui.oneVideo.dynamicRange ? [] : [{   // Y-axis from 0 to 1
+                        ticks: {
+                            min: 0.0,
+                            max: 1.0
+                        }
+                    }]
+                },
+                hover: {
+                    onHover: function (e) {
+                        if (e[0]) {
+                            var frameIdx = e[0]._index;
+                            showImage("../static/videos/" + data.framepaths[frameIdx * DOWNSAMPLE_RATE]
+                                    , 256, 256, '');
+                        }
+                    },
+                    mode: 'index',
+                    intersect: false
+                },
+                animation: {
+                    duration: 0
+                }
+            };
+
+            var ctx = $("#chart");
+            if (chart) {
+                chart.destroy();
+            }
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: options
+            });
+
+            // Attach handler to open vimeo for shorts
+            if (datgui.oneVideo.format == 'short') {
+                openVimeoOnFrameClick();
+            }
+            function openVimeoOnFrameClick() {
+                $("img").click(function(evt){
+                    var title = datgui.oneVideo.shorts.video;
+                    title = title.split('_');
+                    var id = title[title.length - 1];
+                    var url = 'http://vimeo.com/' + id;
+                    openInNewTab(url);
+                });
+                $("img").hover(
+                    function() {
+                        $("#frame").css("cursor", "pointer");
+                    }
+                );
+            }
+        }
+
+        /***************************************************************************************************************
+        * Draw chart for cluster view
+        ***************************************************************************************************************/
+        function drawClusters(datgui) {
+            var COLORS = [
+                [78, 179, 211],   // blue
+                [252, 78, 42],    // red
+                [221, 52, 151],   // magenta
+                [8, 64, 129],     // dark blue
+                [65, 174, 118],   // green
+                [128, 0, 38],     // dark burnt red
+                [250, 159, 181],  // peach/pink
+                [254, 178, 76],   // orange / yellow
+                [73, 0, 106],     // dark violet
+                [0, 109, 44]      // dark green
+            ];
+            var DOWNSAMPLE_RATE = datgui.clusters.format == 'film' ? 15 : 3;
+
+            // Get dataset
+            // Each object in dataset array corresponds to one line
+            var dataset = [];
+            var curClusters = data.clusters[datgui.clusters.format + 's'][datgui.clusters.k];   // film -> films
+            for (var i = 0; i < curClusters.centroids.length; i++) {
+                // Skip if focusOnKth but not focusing on this centroid
+                if (datgui.clusters.focusOnKth != 'all') {
+                    if (i != datgui.clusters.focusOnKth) {
+                        continue;
+                    }
+                }
+                // Add point
+                var rgb = COLORS[i];
+                dataset.push({
+                    label: i,
+                    data: downsampleTimeseries(curClusters.centroids[i], DOWNSAMPLE_RATE),
+                    borderWidth: 2,
+                    borderColor: getRGBA(rgb[0], rgb[1], rgb[2], 0.75),
+                    backgroundColor: getRGBA(rgb[0], rgb[1], rgb[2], 0.05),
+//                    fill: true
+                });
+            }
+
+            // Display assignments if focusOnKth
+            // TODO: show closest points
+            // For films - just show first 10
+            if (datgui.clusters.focusOnKth != 'all') {
+                var clusters = data.clusters[datgui.clusters.format + 's'];
+                var closestMemberIndices = clusters[datgui.clusters.k].closest[datgui.clusters.focusOnKth];
+                console.log(closestMemberIndices);
+                for (var i = 0; i < closestMemberIndices.length; i++) {
+                    var idx = closestMemberIndices[i];
+                    var title = data.ts_idx2title[datgui.clusters.format + 's'][idx];
+                    var series = data.ts[datgui.clusters.format + 's'][idx];
+                    console.log(title);
+
+                    var hex = getRandomHexColor();
+                    var rgb = hexToRGB(hex);
+                    var rgba = getRGBA(rgb.r, rgb.g, rgb.b, 0.2);
+                    dataset.push({
+                        label: title,
+                        data: downsampleTimeseries(series, DOWNSAMPLE_RATE),
+                        borderWidth: 1,
+                        borderColor: rgba,
+                        backgroundColor: rgba,
+                        fill: false
+                    });
+                }
+            }
+            var labels = [];
+            for (var i = 0; i < dataset[0].data.length; i++) {
+                labels.push(i);
+            }
+            var chartData = {
+                labels: labels,
+                datasets: dataset
+            };
+
+            // Utility to generator colors
+            function getRandomHexColor() {
+                var letters = '0123456789ABCDEF';
+                var color = '#';
+                for (var i = 0; i < 6; i++) {
+                    color += letters[Math.floor(Math.random() * 16)];
+                }
+                return color;
+            }
+
+            function hexToRGB(hex) {
+                var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                return result ? {
+                    r: parseInt(result[1], 16),
+                    g: parseInt(result[2], 16),
+                    b: parseInt(result[3], 16)
+                } : null;
+            }
+
+            function getRGBA(r, g, b, opacity) {
+                return "rgba(" + r + "," + g + "," + b + "," + opacity + ")";
+            }
+
+            // Options for chartjs
+            var options = {
+                global: {
+                    responsive: false,
+                    maintainAspectRatio: false,
+                    responsiveAnimationDuration: 0
+                },
+                elements: {   // Don't show individual points on line graph
+                    point: {
+                        radius: 0
+                    }
+                },
+                tooltips: {     // tooltip for points on current mouse x-axis position
+                    mode: datgui.clusters.focusOnKth == 'all' ? 'index' : 'nearest',
+                    intersect: datgui.clusters.focusOnKth == 'all' ? false : true
+                },
+                scales: {
+                    xAxes: [{
+                        display: false
+                    }],
+                    yAxes: datgui.clusters.dynamicRange ? [] : [{   // Y-axis from 0 to 1
+                        ticks: {
+                            min: 0.0,
+                            max: 1.0
+                        }
+                    }]
+                },
+                hover: {
+                    onHover: function(e) {
+                        if (datgui.clusters.format == 'short') {
+                            $("#chart").css("cursor", e[0] ? "pointer" : "default");
+                        }
+                    }
+                },
+                animation: {
+                    duration: 0
+                }
+            };
+
+            var ctx = $("#chart");
+            if (chart) {
+                chart.destroy();
+            }
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: options
+            });
+
+            // Attach handler to open vimeo for shorts
+            if (datgui.clusters.format == 'short') {
+                openVimeoOnTimeseriesClick();
+            }
+            function openVimeoOnTimeseriesClick() {
+                $("#chart").click(function(evt){
+                    console.log(datgui.clusters.format);
+                    var element = chart.getElementAtEvent(evt);
+                    if (typeof element[0] != 'undefined') {
+                        var title = chart.data.datasets[element[0]._datasetIndex].label;
+                        if (isNotNumeric(title)) {        // skip if accidentally clicked on centroid line
+                            title = title.split('_');
+                            var id = title[title.length - 1];
+                            var url = 'http://vimeo.com/' + id;
+                            openInNewTab(url);
+                        }
+                    }
+                });
+                function isNotNumeric(str) {
+                    return isNaN(parseInt(str));
+                }
+            }
+        }
+
+    </script>
+</body>
+</html>
