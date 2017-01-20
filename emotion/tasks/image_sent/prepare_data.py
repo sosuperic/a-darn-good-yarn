@@ -595,17 +595,6 @@ if __name__ == '__main__':
     parser.add_argument('--bc_channel_mean_std', dest='bc_channel_mean_std', action='store_true')
     parser.add_argument('--you_dl_imgs', dest='you_dl_imgs', action='store_true')
     parser.add_argument('--save_plutchik_color_imgs', dest='save_plutchik_color_imgs', action='store_true')
-    parser.add_argument('--save_video_frames', dest='save_video_frames', action='store_true')
-    parser.add_argument('--convert_avis_to_mp4s', dest='convert_avis_to_mp4s', action='store_true')
-    parser.add_argument('--save_credits_index', dest='save_credits_index', action='store_true')
-    parser.add_argument('--save_credits_index_overwrite', dest='save_credits_index_overwrite', default=False,
-                        action='store_true', help='overwrite credits_index.txt files')
-    parser.add_argument('--create_videopath_db', dest='create_videopath_db', action='store_true')
-    parser.add_argument('--match_film_metadata', dest='match_film_metadata', action='store_true')
-    parser.add_argument('--get_shorts_metadata', dest='get_shorts_metadata', action='store_true')
-    parser.add_argument('--create_videometadata_db', dest='create_videometadata_db', action='store_true')
-    parser.add_argument('--vids_dir', dest='vids_dir', default=None,
-                        help='folder that contains dirs (one movie each), e.g. films/MovieQA_full_movies')
 
     cmdline = parser.parse_args()
 
@@ -633,17 +622,3 @@ if __name__ == '__main__':
         retrieve_you_imemo_imgs()
     elif cmdline.save_plutchik_color_imgs:
         save_plutchik_color_imgs()
-    elif cmdline.save_video_frames:
-        save_video_frames(cmdline.vids_dir)
-    elif cmdline.convert_avis_to_mp4s:
-        convert_avis_to_mp4s(cmdline.vids_dir)
-    elif cmdline.save_credits_index:
-        save_credits_index(cmdline.vids_dir, overwrite_files=cmdline.save_credits_index_overwrite)
-    elif cmdline.create_videopath_db:
-        create_videopath_db()
-    elif cmdline.match_film_metadata:
-        pprint(match_film_metadata())
-    elif cmdline.get_shorts_metadata:
-        pprint(get_shorts_metadata())
-    elif cmdline.create_videometadata_db:
-        create_videometadata_db()
