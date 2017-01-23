@@ -36,19 +36,22 @@
 
             // One Video View - intialize
             var oneVideo = {};
-            oneVideo.format = 'film';
+            oneVideo.format = 'films';
             oneVideo.dynamicRange = true;
             oneVideo.films = {};
             oneVideo.films.windowSize = 600;
-            oneVideo.films.video = data.format2titles['film'][0];
+            oneVideo.films.video = data.format2titles['films'][0];
             oneVideo.shorts = {};
             oneVideo.shorts.windowSize = 60;
-            oneVideo.shorts.video = data.format2titles['short'][0];
+            oneVideo.shorts.video = data.format2titles['shorts'][0];
+            oneVideo.ads = {};
+            oneVideo.ads.windowSize = 1;
+            oneVideo.ads.video = data.format2titles['ads'][0];
             this.oneVideo = oneVideo;
 
             // Clusters View - intialize
             var clusters = {};
-            clusters.format = 'film';
+            clusters.format = 'films';
             clusters.dynamicRange = true;
             clusters.k = Object.keys(data.clusters.films)[0];
             clusters.focusOnKth = 'all';
@@ -93,10 +96,10 @@
              **********************************************************************************************************/
             function addOneVideoGUI() {
                 // Set ranges, values
-                var guiFormats = gui.add(datgui.oneVideo, 'format', ['film', 'short']);
+                var guiFormats = gui.add(datgui.oneVideo, 'format', ['films', 'shorts', 'ads']);
                 var guiR = gui.add(datgui.oneVideo, 'dynamicRange');
                 var guiW = gui.add(datgui.oneVideo.films, 'windowSize').min(1).max(1500).step(1);
-                var guiV = gui.add(datgui.oneVideo.films, 'video', data.format2titles['film']);
+                var guiV = gui.add(datgui.oneVideo.films, 'video', data.format2titles['films']);
 
                 // Dat Gui Handlers
                 guiFormats.onFinishChange(function(format) {
@@ -104,12 +107,15 @@
                     gui.__controllers[3].remove();  // window
                     gui.__controllers[3].remove();  // video
                     var guiFormatParams, windowMax;
-                    if (format == 'film') {
+                    if (format == 'films') {
                         guiFormatParams = datgui.oneVideo.films;
                         windowMax = 1500;
-                    } else if (format == 'short') {
+                    } else if (format == 'shorts') {
                         guiFormatParams = datgui.oneVideo.shorts;
                         windowMax = 150;
+                    } else if (format == 'ads') {
+                        guiFormatParams = datgui.oneVideo.ads;
+                        windowMax = 15;
                     }
                     // Add controllers back
                     guiW = gui.add(guiFormatParams, 'windowSize').min(1).max(windowMax).step(1);
@@ -121,24 +127,29 @@
                 );
                 function addFinishChangeHandlers(guiW, guiV) {
                     guiW.onFinishChange(function(windowSize) {
-                        var title = datgui.oneVideo.format == 'film' ? datgui.oneVideo.films.video : datgui.oneVideo.shorts.video;
+                        var title = datgui.oneVideo[datgui.oneVideo.format].video;
+//                        if (datgui.oneVideo.format == 'films') {
+//                            title = datgui.
+//                        }
+//                        var title = datgui.oneVideo.format == 'films' ? datgui.oneVideo.films.video : datgui.oneVideo.shorts.video;
                         getUpdatedPreds(title, windowSize);
                     });
                     guiV.onFinishChange(function(title) {
-                        var windowSize = datgui.oneVideo.format == 'film' ? datgui.oneVideo.films.windowSize : datgui.oneVideo.shorts.windowSize;
+                        var windowSize = datgui.oneVideo[datgui.oneVideo.format].windowSize;
+//                        var windowSize = datgui.oneVideo.format == 'films' ? datgui.oneVideo.films.windowSize : datgui.oneVideo.shorts.windowSize;
 
                         // Window size may be too big for video
                         // Right now, in views.py, pred_len is calculated as the number of frame files
                         // However the actual length is ignores the credits
                         // Thus, this should be an upper bound
-                        var nextVideoLen = data.title2pred_len[datgui.oneVideo.format + 's'][title];
+                        var nextVideoLen = data.title2pred_len[datgui.oneVideo.format][title];
                         if (nextVideoLen < windowSize) {
                             console.log('Video too short for current window size, changing window size to 1/4 video length');
-                            datgui.oneVideo[datgui.oneVideo.format + 's'].windowSize = Math.round(windowSize / 4);
+                            datgui.oneVideo[datgui.oneVideo.format].windowSize = Math.round(windowSize / 4);
                             guiW.updateDisplay();
                         }
 
-                        getUpdatedPreds(title, datgui.oneVideo[datgui.oneVideo.format + 's'].windowSize);
+                        getUpdatedPreds(title, datgui.oneVideo[datgui.oneVideo.format].windowSize);
                     });
                 }
                 addFinishChangeHandlers(guiW, guiV);
@@ -150,9 +161,15 @@
              **********************************************************************************************************/
             function addClustersGUI() {
                 // Set ranges, initial values
-                var guiFormats = gui.add(datgui.clusters, 'format', ['film', 'short']);
+                var validFormats = [];
+                for (var fmt in data.clusters) {
+                    if (Object.keys(data.clusters[fmt]).length > 0) {
+                        validFormats.push(fmt);
+                    }
+                }
+                var guiFormats = gui.add(datgui.clusters, 'format', validFormats);
                 var guiR = gui.add(datgui.clusters, 'dynamicRange');
-                var formatKClusters = data.clusters[datgui.clusters.format + 's'];
+                var formatKClusters = data.clusters[datgui.clusters.format];
                 var guiK = gui.add(datgui.clusters, 'k', Object.keys(formatKClusters));
                 var guiFocusOnKth = gui.add(datgui.clusters, 'focusOnKth', ['all'].concat(getKIndices(datgui.clusters.k)));
                 // Handlers
@@ -160,13 +177,7 @@
                     // Remove k-related controllers to get list of available k's for that format
                     gui.__controllers[4].remove();
                     gui.__controllers[3].remove();
-                    var formatKClusters;
-                    if (format == 'film') {
-                        formatKClusters = data.clusters[datgui.clusters.format + 's'];
-
-                    } else if (format == 'short') {
-                        formatKClusters = data.clusters[datgui.clusters.format + 's'];
-                    }
+                    var formatKClusters = data.clusters[datgui.clusters.format];
                     datgui.clusters.k =  Object.keys(formatKClusters)[0];
                     guiK = gui.add(datgui.clusters, 'k', Object.keys(formatKClusters));
                     datgui.clusters.focusOnKth =  'all';
@@ -271,7 +282,7 @@
         * Draw chart for one image view - show images on hover
         ***************************************************************************************************************/
         function drawOneVideo(datgui) {
-            var DOWNSAMPLE_RATE = datgui.oneVideo.format == 'film' ? 1 : 1; // not downsampling right now
+            var DOWNSAMPLE_RATE = datgui.oneVideo.format == 'films' ? 1 : 1; // not downsampling right now
 
             // Each label is the timestamp hr:min:sec in the video
             function getLabels(data) {
@@ -363,7 +374,7 @@
             });
 
             // Attach handler to open vimeo for shorts
-            if (datgui.oneVideo.format == 'short') {
+            if (datgui.oneVideo.format == 'shorts') {
                 openVimeoOnFrameClick();
             }
             function openVimeoOnFrameClick() {
@@ -398,12 +409,12 @@
                 [73, 0, 106],     // dark violet
                 [0, 109, 44]      // dark green
             ];
-            var DOWNSAMPLE_RATE = datgui.clusters.format == 'film' ? 15 : 3;
+            var DOWNSAMPLE_RATE = datgui.clusters.format == 'films' ? 15 : 3;
 
             // Get dataset
             // Each object in dataset array corresponds to one line
             var dataset = [];
-            var curClusters = data.clusters[datgui.clusters.format + 's'][datgui.clusters.k];   // film -> films
+            var curClusters = data.clusters[datgui.clusters.format][datgui.clusters.k];   // film -> films
             for (var i = 0; i < curClusters.centroids.length; i++) {
                 // Skip if focusOnKth but not focusing on this centroid
                 if (datgui.clusters.focusOnKth != 'all') {
@@ -427,13 +438,13 @@
             // TODO: show closest points
             // For films - just show first 10
             if (datgui.clusters.focusOnKth != 'all') {
-                var clusters = data.clusters[datgui.clusters.format + 's'];
+                var clusters = data.clusters[datgui.clusters.format];
                 var closestMemberIndices = clusters[datgui.clusters.k].closest[datgui.clusters.focusOnKth];
                 console.log(closestMemberIndices);
                 for (var i = 0; i < closestMemberIndices.length; i++) {
                     var idx = closestMemberIndices[i];
-                    var title = data.ts_idx2title[datgui.clusters.format + 's'][idx];
-                    var series = data.ts[datgui.clusters.format + 's'][idx];
+                    var title = data.ts_idx2title[datgui.clusters.format][idx];
+                    var series = data.ts[datgui.clusters.format][idx];
                     console.log(title);
 
                     var hex = getRandomHexColor();
@@ -510,7 +521,7 @@
                 },
                 hover: {
                     onHover: function(e) {
-                        if (datgui.clusters.format == 'short') {
+                        if (datgui.clusters.format == 'shorts') {
                             $("#chart").css("cursor", e[0] ? "pointer" : "default");
                         }
                     }
@@ -531,7 +542,7 @@
             });
 
             // Attach handler to open vimeo for shorts
-            if (datgui.clusters.format == 'short') {
+            if (datgui.clusters.format == 'shorts') {
                 openVimeoOnTimeseriesClick();
             }
             function openVimeoOnTimeseriesClick() {

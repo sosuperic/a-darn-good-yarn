@@ -1,68 +1,76 @@
 # Controller for viewing shape 
 # TODO for refactor:
-# 1) Have a formats = ['films', 'shorts'], take care of some redundancy that way
-# 2) Consolidate data structures? clusters, ts, ts_idx2title, etc. all have 'films/shorts' as first key
+# 1) Consolidate data structures? clusters, ts, ts_idx2title, etc. all have 'films/shorts' as first key
 # maybe just do data = {}, for format in formats: data['format] = {}
 # And then attach the clusters, ts, etc.
 
-
-from collections import defaultdict
+from flask import Flask, Response, request, render_template
 import json
 from natsort import natsorted
 import os
 import pandas as pd
 import pickle
-from flask import Flask, Response, request, render_template
 
 from shape import app
 from core.predictions.utils import smooth, DTWDistance
 from core.utils.utils import get_credits_idx
 
-###### PATHS
+###### PATHS, ETC.
+FORMATS = ['films', 'shorts', 'ads']
+
 VIDEOS_PATH = 'shape/static/videos/'
 OUTPUTS_PATH = 'shape/outputs/'
 
-# For local vs shannon
+# For One Video view - (if else for local vs shannon)
 PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
 
-TS_FILMS_FN = 'ts_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
-TS_SHORTS_FN = 'ts_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
-TS_FILMS_IDX2TITLE_FN = 'ts_idx2title_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
-TS_SHORTS_IDX2TITLE_FN = 'ts_idx2title_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
-
-FILMS_CENTROIDS_FN = 'centroids_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
-FILMS_ASSIGNMENTS_FN = 'assignments_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
-TS_DISTS_FILMS_FN = 'ts_dists_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl'
-SHORTS_CENTROIDS_FN = 'centroids_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
-SHORTS_ASSIGNMENTS_FN = 'assignments_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
-# SHORTS_CENTROIDS_FN = 'centroids_dirshorts-n1323-normMagsFalse-k{}-w30-ds2-maxnf1800-fnsent_biclass_19.pkl'
-# SHORTS_ASSIGNMENTS_FN = 'assignments_dirshorts-n1323-normMagsFalse-k{}-w30-ds2-maxnf1800-fnsent_biclass_19.pkl'
-TS_DISTS_SHORTS_FN  = 'ts_dists_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl'
-
-# TODO: load distances for TS_shorts
+# For Clusters view:
+TS_FN = \
+    {'films': 'ts_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
+     'shorts': 'ts_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+     'ads': None}
+TS_IDX2TITLE_FN = \
+    {'films': 'ts_idx2title_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
+     'shorts': 'ts_idx2title_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+     'ads': None}
+CENTROIDS_FN = \
+    {'films': 'centroids_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
+     'shorts': 'centroids_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+     'ads': None}
+ASSIGNMENTS_FN = \
+    {'films': 'assignments_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
+     'shorts': 'assignments_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+     'ads': None}
+TS_DISTS_FN = \
+    {'films': 'ts_dists_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
+     'shorts': 'ts_dists_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+     'ads': None}
 
 ###### GLOBALS
 title2vidpath = {}
-format2titles = defaultdict(list)
+format2titles = {}
 title2format = {}
 
-clusters = {}           # films/shorts -> key (k) -> {assignments: k-idx: array, centroids: k-idx: array, closest: k-idx: array of member_indices}
-ts = {}                 # films/shorts -> list of arrays
-ts_idx2title = {}       # films/shorts -> idx -> title
+# For One Video view - to adjust window length
 title2pred_len = {}     # films/shorts -> title -> len
-# fmt2k2c2top_ts_idx = {}
-
-# Used for initial curve to display
+# For One Video view - used for initial curve to display
 cur_format = None
 cur_title = None
 cur_pd_df = None
 cur_vid_framepaths = None
 
-#################################################################################################
+# For Clusters view
+clusters = {}           # films/shorts -> key (k) -> {assignments: k-idx: array, centroids: k-idx: array, closest: k-idx: array of member_indices}
+ts = {}                 # films/shorts -> list of arrays
+ts_idx2title = {}       # films/shorts -> idx -> title
+
+########################################################################################################################
 # PREDICTION FUNCTIONS
-#################################################################################################
+########################################################################################################################
 def get_preds_from_df(df, window_len=48):
-    """Return smoothed preds: each key is the label, value is list of frame-wise predictions"""
+    """
+    Return dict. Each key is the label, value is list of smoothed frame-wise predictions
+    """
     if len(df.columns) == 2:     # sent_biclass -> just show positive
         preds = {'pos': list(smooth(df.pos.values, window_len=window_len))}
     else:
@@ -71,13 +79,41 @@ def get_preds_from_df(df, window_len=48):
             preds[c] = list(smooth(df[c].values, window_len=window_len))
     return preds
 
-#################################################################################################
-# INITIAL SETUP
-#################################################################################################
-def get_all_vidpaths_with_preds():
+def get_cur_vid_df_and_framepaths(cur_title):
     """
-    Return list of full paths to every video directory that contains predictions
-    e.g. [<VIDEOS_PATH>/@Animated/@OldDisney/Feast/, ...]
+    Return df and list of framepaths. Used for ajax call in One Video view that retrieves smoothed predictions for
+    new video. Framepaths are now relative to VIDEOS_PATH (which is a static path for js) instead of the full
+    path so that the HTML template can display it.
+    """
+    global title2vidpath, cur_pd_df, cur_vid_framepaths
+
+    # Get dataframe
+    cur_pd_df = pd.read_csv(os.path.join(title2vidpath[cur_title], 'preds', PRED_FN))
+
+    # Get framepaths
+    cur_vid_framepaths = [f for f in os.listdir(os.path.join(title2vidpath[cur_title], 'frames')) if \
+            not f.startswith('.')]
+    cur_vid_framepaths = [os.path.join(title2vidpath[cur_title].split(VIDEOS_PATH)[1], 'frames', f) for \
+        f in cur_vid_framepaths]
+    cur_vid_framepaths = natsorted(cur_vid_framepaths)
+
+    # Ignore credits
+    vidpath = title2vidpath[cur_title]
+    credit_idx = get_credits_idx(vidpath)
+    if credit_idx:
+        cur_pd_df = cur_pd_df[:credit_idx]
+        cur_vid_framepaths = cur_vid_framepaths[:credit_idx]
+
+    return cur_pd_df, cur_vid_framepaths
+
+########################################################################################################################
+# INITIAL SETUP
+########################################################################################################################
+def get_all_vidpaths_with_frames_and_preds():
+    """
+    Return list of full paths to every video directory that a) contains frames/ directory, b) predictions/ directory,
+    and c) frames/ directory has more than 0 frames. Starts walking in VIDEOS_PATH directory. Each full path is of the
+    form '<VIDEOS_PATH>/@Animated/@OldDisney/Feast/'.
     """
     vidpaths = []
     for root, dirs, files in os.walk(VIDEOS_PATH):
@@ -86,47 +122,21 @@ def get_all_vidpaths_with_preds():
             vidpaths.append(root)
     return vidpaths
 
-def get_cur_vid_df_and_framepaths(cur_title):
-    """
-    Return df and list of framepaths
-    """
-    global title2vidpath, cur_pd_df, cur_vid_framepaths
-
-    vidpath = title2vidpath[cur_title]
-
-    # Dataframe
-    cur_pd_df = pd.read_csv(os.path.join(title2vidpath[cur_title], 'preds', PRED_FN))
-
-    # Framepaths
-    # TODO: deprecate this messge: full paths to relative paths because js has relative path starting from videos/
-    cur_vid_framepaths = [f for f in os.listdir(os.path.join(title2vidpath[cur_title], 'frames')) if \
-            not f.startswith('.')]
-    cur_vid_framepaths = [os.path.join(title2vidpath[cur_title].split(VIDEOS_PATH)[1], 'frames', f) for \
-        f in cur_vid_framepaths]
-    cur_vid_framepaths = natsorted(cur_vid_framepaths)
-
-    # Ignore credits
-    credit_idx = get_credits_idx(vidpath)
-    if credit_idx:
-        cur_pd_df = cur_pd_df[:credit_idx]
-        cur_vid_framepaths = cur_vid_framepaths[:credit_idx]
-
-    return cur_pd_df, cur_vid_framepaths
-
 def setup_initial_data():
     """
     Return initial data to pass to template.
     Also set global variables cur_pd_df and cur_title
     """
     ####################################################################################################################
-    # Set titles, videopaths, etc
+    # One video view (primarily) - set titles, videopaths, etc
     ####################################################################################################################
     global title2vidpath, format2titles, title2format
 
-    vidpaths = get_all_vidpaths_with_preds()
-    format2titles = defaultdict(list)
+    vidpaths = get_all_vidpaths_with_frames_and_preds()
+    for fmt in FORMATS:
+        format2titles[fmt] = []
     for vp in vidpaths:
-        format = vp.split(VIDEOS_PATH)[1].split('/')[0].rstrip('s')     # shape/static/videos/shorts/shortoftheweek/Feast -> short
+        format = vp.split(VIDEOS_PATH)[1].split('/')[0]     # shape/static/videos/shorts/shortoftheweek/Feast -> shorts
         t = os.path.basename(vp)
         title2format[t] = format
         format2titles[format].append(t)
@@ -136,107 +146,69 @@ def setup_initial_data():
         print '{}: {}'.format(format, len(titles))
 
     ####################################################################################################################
-    # Set time series, cluster related data
+    # Cluster view - set time series, cluster related data
     ####################################################################################################################
     # All time series
     global ts, ts_idx2title, title2pred_len
-    # NOTE: all the time seris are of the same length -- this is the saved interpolated time series used during
+    # NOTE: all the time series are of the same length -- this is the saved interpolated time series used during
     # clustering. These are used to display the closest movies in the clusters view
-    ts['films'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FILMS_FN), 'r'))
-    ts['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_FN), 'r'))
-    # make it serializable
-    ts['films'] = [list(arr) for arr in ts['films']]
-    ts['shorts'] = [list(arr) for arr in ts['shorts']]
 
-    ts_idx2title['films'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FILMS_IDX2TITLE_FN), 'r'))
-    ts_idx2title['shorts'] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_SHORTS_IDX2TITLE_FN), 'r'))
+    for fmt in ['films', 'shorts']:#FORMATS:
+        try:
+            # Clusters view
+            ts[fmt] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FN[fmt]), 'rb'))
+            ts[fmt] = [list(arr) for arr in ts[fmt]]        # make it serializable
+            ts_idx2title[fmt] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_IDX2TITLE_FN[fmt]), 'rb'))
 
-    # For one movie view
-    # title2pred_len, so we can adjust window size when changing datgui titles (if cur window size is too big)
-    title2pred_len['films'] = {}
-    title2pred_len['shorts'] = {}
-    for format, d in ts_idx2title.items():
-        for ts_idx, title in d.items():
-            if title in title2vidpath:
-                vid_framespath = os.path.join(title2vidpath[title], 'frames')
-                title2pred_len[format][title] = len(os.listdir(vid_framespath))
+            # One video view - adjusting window size
+            title2pred_len[fmt] = {}
+            for ts_idx, title in ts_idx2title[fmt].items():
+                if title in title2vidpath:
+                    vid_framespath = os.path.join(title2vidpath[title], 'frames')
+                    title2pred_len[format][title] = len(os.listdir(vid_framespath))
+        except Exception as e:
+            print fmt, e
 
-    # TODO: clean up and refactor following
     global clusters
-    # Films
-    clusters['films'] = {}
     ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    for k in ks:
-        k = str(k)          # use string so it's treated as a js Object instead of an array in template
-        centroids_fn = FILMS_CENTROIDS_FN.format(k)
-        assignments_fn = FILMS_ASSIGNMENTS_FN.format(k)
-        ts_dists_fn = TS_DISTS_FILMS_FN.format(k)
-        centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
-        assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
-        ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
-        if os.path.exists(centroids_path) and os.path.exists(assignments_path) and os.path.exists(ts_dists_path):
-            clusters['films'][k] = {}
-            with open(centroids_path) as f:
-                clusters['films'][k]['centroids'] = pickle.load(f)
-            with open(assignments_path) as f:
-                clusters['films'][k]['assignments'] = pickle.load(f)
+    for fmt in FORMATS:
+        clusters[fmt] = {}
+        for k in ks:
+            try:
+                k = str(k)          # use string so it's treated as a js Object instead of an array in template
+                centroids_fn = CENTROIDS_FN[fmt].format(k)
+                assignments_fn = ASSIGNMENTS_FN[fmt].format(k)
+                ts_dists_fn = TS_DISTS_FN[fmt].format(k)
+                centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
+                assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
+                ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
+                if os.path.exists(centroids_path) and os.path.exists(assignments_path) and os.path.exists(ts_dists_path):
+                    clusters[fmt][k] = {}
+                    with open(centroids_path) as f:
+                        clusters[fmt][k]['centroids'] = pickle.load(f)
+                    with open(assignments_path) as f:
+                        clusters[fmt][k]['assignments'] = pickle.load(f)
 
-            # TS Distances to centroids
-            # ts_dists: dict, key is int (centroid_idx), value = dict (key is member_idx, value is distance)
-            ts_dists_fn = TS_DISTS_FILMS_FN.format(k)
-            ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
-            if os.path.exists(ts_dists_path):
-                with open(ts_dists_path) as f:
-                    kdists = pickle.load(f)      # key is ts_index, value is distance to its centroid
-                centroid2closest = {}
-                for centroid_idx, dists in kdists.items():
-                    sorted_member_indices = sorted(dists, key=dists.get)
-                    top_n = sorted_member_indices[:10]
-                    # top_n_series = [ts['films'][m_idx] for m_idx in top_n]
-                    centroid2closest[centroid_idx] = top_n
-                clusters['films'][k]['closest'] = centroid2closest
+                    # TS Distances to centroids
+                    # ts_dists: dict, key is int (centroid_idx), value = dict (key is member_idx, value is distance)
+                    ts_dists_fn = TS_DISTS_FN[fmt].format(k)
+                    ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
+                    if os.path.exists(ts_dists_path):
+                        with open(ts_dists_path) as f:
+                            kdists = pickle.load(f)      # key is ts_index, value is distance to its centroid
+                        centroid2closest = {}
+                        for centroid_idx, dists in kdists.items():
+                            sorted_member_indices = sorted(dists, key=dists.get)
+                            top_n = sorted_member_indices[:10]
+                            # top_n_series = [ts['films'][m_idx] for m_idx in top_n]
+                            centroid2closest[centroid_idx] = top_n
+                        clusters[fmt][k]['closest'] = centroid2closest
 
-        else:
-            print 'Centroids/assignments/ts_dists path doesnt exist:\n{}\n{}\n{}'.format(
-                centroids_path, assignments_path, ts_dists_path)
-
-    # Shorts
-    clusters['shorts'] = {}
-    ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    for k in ks:
-        k = str(k)          # use string so it's treated as a js Object instead of an array in template
-        centroids_fn = SHORTS_CENTROIDS_FN.format(k)
-        assignments_fn = SHORTS_ASSIGNMENTS_FN.format(k)
-        ts_dists_fn = TS_DISTS_SHORTS_FN.format(k)
-        centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
-        assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
-        ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
-        if os.path.exists(centroids_path) and os.path.exists(assignments_path) and os.path.exists(ts_dists_path):
-            clusters['shorts'][k] = {}
-            with open(centroids_path) as f:
-                clusters['shorts'][k]['centroids'] = pickle.load(f)
-            with open(assignments_path) as f:
-                clusters['shorts'][k]['assignments'] = pickle.load(f)
-
-            # TS Distances to centroids
-            # ts_dists: dict, key is int (centroid_idx), value = dict (key is member_idx, value is distance)
-            if os.path.exists(ts_dists_path):
-                with open(ts_dists_path) as f:
-                    kdists = pickle.load(f)      # key is ts_index, value is distance to its centroid
-                centroid2closest = {}
-                for centroid_idx, dists in kdists.items():
-                    sorted_member_indices = sorted(dists, key=dists.get)
-                    top_n = sorted_member_indices[:10]
-                    # top_n_series = [ts['shorts'][m_idx] for m_idx in top_n]
-                    centroid2closest[centroid_idx] = top_n       # TODO: return series of index to series
-                clusters['shorts'][k]['closest'] = centroid2closest
-
-        else:
-            print 'Centroids/assignments/ts_dists path doesnt exist:\n{}\n{}\n{}'.format(
-                centroids_path, assignments_path, ts_dists_path)
-
-
-
+                else:
+                    print 'Centroids/assignments/ts_dists path doesnt exist:\n{}\n{}\n{}'.format(
+                        centroids_path, assignments_path, ts_dists_path)
+            except Exception as e:
+                print e
 
     print 'Setup done'
 
@@ -265,7 +237,7 @@ def shape():
 
     # Get information for *first* video to show
     # cur_format = format2titles.keys()[0]
-    cur_format = 'film'
+    cur_format = 'films'
     cur_title = format2titles[cur_format][0]
     cur_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
     cur_vid_preds = get_preds_from_df(cur_pd_df, window_len=300)    # Window_len has to match default in html file
@@ -292,6 +264,7 @@ def get_preds_and_frames(title, window_len):
         cur_title = title
         cur_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
 
+    print window_len, len(cur_pd_df)
     preds = get_preds_from_df(cur_pd_df, window_len=int(window_len))
     data = {'preds': preds, 'framepaths': cur_vid_framepaths}
 
