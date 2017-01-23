@@ -2,8 +2,10 @@
 
 import argparse
 import cPickle as pickle
+import matplotlib.pylab as plt
 from multiprocessing.dummy import Pool as ThreadPool
 from natsort import natsorted
+import numpy as np
 import os
 from pprint import pprint
 import requests
@@ -18,9 +20,11 @@ MSD_TRACKS_DB = 'data/msd/full/AdditionalFiles/track_metadata.db'
 MSD_SPOTIFY_MATCH_RESULTS  = 'data/msd/full/AdditionalFiles/msd_spotify_match_results_{}.pkl'
 
 SPOTIFY_PATH = 'data/spotify/'
-SPOTIFY_PREVIEWS_PATH = 'data/spotify/previews/'
 MSD_SPOTIFY_MATCH_DB = 'data/spotify/MsdSpotifyMatch.db'
 SPOTIFY_AUDIO_FEATURES = 'data/spotify/spotify_audio_features.pkl'
+SPOTIFY_AF_DB = 'data/spotify/SpotifyAudioFeatures.db'
+SPOTIFY_PREVIEWS_PATH = 'data/spotify/previews/'
+SONGS_PER_FOLDER = 100   # 26 * 26 * 26 * 75 = 1757600
 
 ########################################################################################################################
 # Million song dataset (msd) and Spotify
@@ -168,7 +172,7 @@ def match_msd_with_spotify():
 
     # Close up
     conn.commit()
-    msmr_out_fp = os.path.join(MSD_SPOTIFY_MATCH_DB, MSD_SPOTIFY_MATCH_RESULTS.format(cur_msmr_idx))
+    msmr_out_fp = os.path.join(MSD_SPOTIFY_MATCH_RESULTS.format(cur_msmr_idx))
     with open(msmr_out_fp, 'wb') as f:
         pickle.dump(cur_msmr, f, protocol=2)
 
@@ -212,7 +216,7 @@ def lookup_spotify_audio_features():
     sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
     cur_batch_spotify_track_ids = []        # make a request of 50 ids at a time
-    i = 0                                   # number looked up this run, just used for printing
+    i = 0                                   # number batches looked up this run, just used for printing
     for spotify_track_id in all_spotify_track_ids:
         if spotify_track_id in lookedup_so_far:
             # print 'Track already looked up, skipping'
@@ -220,23 +224,28 @@ def lookup_spotify_audio_features():
         else:
             cur_batch_spotify_track_ids.append(spotify_track_id)
 
+
+        # Lookup and save features in batches
         if len(cur_batch_spotify_track_ids) % 50 == 0:
-            # Lookup and save features
             tracks_features = sp.audio_features(cur_batch_spotify_track_ids)
             for j, track_features in enumerate(tracks_features):
                 lookedup_so_far[cur_batch_spotify_track_ids[j]] = track_features
-            with open(SPOTIFY_AUDIO_FEATURES, 'wb') as f:
-                pickle.dump(lookedup_so_far, f, protocol=2)
 
             # Reset
             cur_batch_spotify_track_ids = []
 
-            # Print a count
-            i += 50
+        # Save pickle
+        if i % 1000 == 0:
             print '=' * 100
+            print 'Pickling'
+            with open(SPOTIFY_AUDIO_FEATURES, 'wb') as f:
+                pickle.dump(lookedup_so_far, f, protocol=2)
+            # Print a count
             print 'cur_run: {}, looked_up_so_far: {}, num_match: {}'.format(
                 i, len(lookedup_so_far), len(all_spotify_track_ids))
             print '=' * 100
+
+        i += 1
 
     # Wrap up
     with open(SPOTIFY_AUDIO_FEATURES, 'wb') as f:
@@ -272,6 +281,88 @@ def clean_spotify_audio_features():
     print good
     print bad
 
+def put_spotify_af_in_db():
+    """
+    Place the entries in the spotify_audio_feaures.pkl into a sqlite db
+    """
+    print 'Putting Spotify audio features in sqlite db'
+
+    # Make db if it doesn't exist
+    if not os.path.exists(SPOTIFY_AF_DB):
+        conn = sqlite3.connect(SPOTIFY_AF_DB)
+        conn.execute('CREATE TABLE SpotifyAudioFeatures('
+                     'acousticness REAL,'
+                     'analysis_url TEXT,'
+                     'danceability REAL,'
+                     'duration_ms REAL,'
+                     'energy REAL,'
+                     'id TEXT,'
+                     'instrumentalness REAL,'
+                     'key INTEGER,'
+                     'liveness REAL,'
+                     'loudness REAL,'
+                     'mode INTEGER,'
+                     'speechiness REAL,'
+                     'tempo REAL,'
+                     'time_signature INTEGER,'
+                     'track_href TEXT,'
+                     'type TEXT,'
+                     'uri TEXT,'
+                     'valence REAL)')
+
+    conn = sqlite3.connect(SPOTIFY_AF_DB)
+    cur = conn.cursor()
+
+    af = pickle.load(open(SPOTIFY_AUDIO_FEATURES, 'rb'))
+    for spotify_track_id, features in af.items():
+        if features:
+            cur.execute("INSERT INTO SpotifyAudioFeatures VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (
+                        features.get('acousticness'),
+                        features.get('analysis_url'),
+                        features.get('danceability'),
+                        features.get('duration_ms'),
+                        features.get('energy'),
+                        features.get('id'),
+                        features.get('instrumentalness'),
+                        features.get('key'),
+                        features.get('liveness'),
+                        features.get('loudness'),
+                        features.get('mode'),
+                        features.get('speechiness'),
+                        features.get('tempo'),
+                        features.get('time_signature'),
+                        features.get('track_href'),
+                        features.get('type'),
+                        features.get('uri'),
+                        features.get('valence')))
+        else:
+            print spotify_track_id
+
+    conn.commit()
+
+def plot_af_stats():
+    # Get histogram of valence and energy
+    plt.style.use('ggplot')
+
+    conn = sqlite3.connect(SPOTIFY_AF_DB)
+    cur = conn.cursor()
+    rows = cur.execute("SELECT valence, energy from SpotifyAudioFeatures")
+    valences, energies, valergies = [], [], []
+    for row in rows:
+        if row[0] and row[1]:
+            valences.append(row[0])
+            energies.append(row[1])
+        # if row[1]:
+        # if row[0] and row[1]:
+        #     valergies.append([row[0], row[1]])
+    plt.hist(valences, 25)
+    plt.show()
+    plt.hist(energies, 25)
+    plt.show()
+    plt.hexbin(valences, energies, gridsize=25)#, bins='log', cmap='inferno')
+    plt.show()
+
+
 def dl_previews_from_spotify():
     """
     Download previews from spotify urls and not using 7preview. For all the songs a) matched on MSD, and b)
@@ -282,9 +373,6 @@ def dl_previews_from_spotify():
     of the directories, and the 4th is the count of how many files are in the leaf dir currently. For instance,
     if B/E/Z/ is the last folder saved to and currently contains 53 mp3 files, the 4 numbers should be 1,4,25,53.
     """
-    songs_per_folder = 100   # 26 * 26 * 26 * 75 = 1757600
-    alph = string.ascii_uppercase
-
     def retrieve_img_and_process(url_and_fp):
         url, fp = url_and_fp[0], url_and_fp[1]
         urllib.urlretrieve(url, fp)
@@ -304,6 +392,7 @@ def dl_previews_from_spotify():
     print 'Already downloaded: {} tracks'.format(num_already_downloaded)
 
     # Used for filepaths
+    alph = string.ascii_uppercase
     dir_indices = open(os.path.join(SPOTIFY_PATH, 'previews_dir_indices.txt'), 'rb').readlines()[0].split(',')
     dir_indices = [int(s) for s in dir_indices]
     cur_alph_indices = dir_indices[0:3]
@@ -311,16 +400,16 @@ def dl_previews_from_spotify():
     print cur_alph_indices, i
 
     # Check that indices are correct
-    num_files_idx = (songs_per_folder * cur_alph_indices[2]) + \
-            (songs_per_folder * (cur_alph_indices[1] * 26)) + \
-            (songs_per_folder * (cur_alph_indices[0] * 26 * 26)) + \
+    num_files_idx = (SONGS_PER_FOLDER * cur_alph_indices[2]) + \
+            (SONGS_PER_FOLDER * (cur_alph_indices[1] * 26)) + \
+            (SONGS_PER_FOLDER * (cur_alph_indices[0] * 26 * 26)) + \
             i   # i is supposed to be index for next file to save, so if A/Z/B/ has one file, i = 1
     if num_files_idx != num_already_downloaded:
         print 'Indices incorrect: {} vs. {}'.format(num_files_idx, num_already_downloaded)
         return
 
 
-    # Get spotify_track_ids that have been matched with msd
+    # Get spotify_track_ids and preview urls that have been matched with msd
     conn = sqlite3.connect(MSD_SPOTIFY_MATCH_DB)
     cur = conn.cursor()
     spotify_track_ids_and_preview_urls = []
@@ -329,12 +418,20 @@ def dl_previews_from_spotify():
     for row in rows:
         spotify_track_ids_and_preview_urls.append([row[0], row[1]])
 
+    # Get spotify tracks that have had audio features looked up
+    af = pickle.load(open(SPOTIFY_AUDIO_FEATURES, 'rb'))   # dict: key is spotify track_id, value is audio features
+
     print 'Getting urls and fps'
     urls = []
     fps = []
     for spotify_track_id, preview_url in spotify_track_ids_and_preview_urls:
+
         # Skip if preview mp3 already downloaded
         if spotify_track_id in already_downloaded:
+            continue
+
+        # Skip if don't have audio features yet
+        if spotify_track_id not in af:
             continue
 
         urls.append(preview_url)
@@ -346,10 +443,10 @@ def dl_previews_from_spotify():
             os.system('mkdir -p {}'.format(dirpath))
         fp = os.path.join(dirpath, '{}.mp3'.format(spotify_track_id))
         fps.append(fp)
-        print fp
+        # print fp
 
         # Update fp indices
-        if (i != 0) and (i % songs_per_folder == 0):
+        if (i != 0) and (i % SONGS_PER_FOLDER == 0):
             cur_alph_indices[2] += 1
             if cur_alph_indices[2] > 25:
                 cur_alph_indices[2] = 0
@@ -373,6 +470,69 @@ def dl_previews_from_spotify():
         print i
         pool.map(retrieve_img_and_process, urls_and_fps[i:i+step])
 
+def clean_dld_previews():
+    """
+    Remove duplicates, make all leaf nodes have 100 files
+    """
+    # Remove duplicates
+    dups = 0
+    already_downloaded = set()
+    for root, dirs, files in os.walk(SPOTIFY_PREVIEWS_PATH):
+        if len(dirs) == 0:
+            for f in files:
+                if f in already_downloaded:
+                    os.remove(os.path.join(root, f))
+                    dups += 1
+                else:
+                    already_downloaded.add(f)
+    print 'Removed {} duplicates'.format(dups)
+
+    # # Make every leaf folder (except the last one maybe) have 100 files
+    # This is pretty rare and easy to do more manually through Python terminal
+    # Get last folder to move
+    alph = string.ascii_uppercase
+    dir_indices = open(os.path.join(SPOTIFY_PATH, 'previews_dir_indices.txt'), 'rb').readlines()[0].split(',')
+    dir_indices = [int(s) for s in dir_indices]
+    cur_alph_indices  = dir_indices[0:3]
+    print cur_alph_indices
+
+    for root, dirs, files in os.walk(SPOTIFY_PREVIEWS_PATH):
+        last_dir = alph[cur_alph_indices[0]] + '/' + alph[cur_alph_indices[1]] + '/' + alph[cur_alph_indices[2]]
+        last_dirpath = os.path.join(SPOTIFY_PREVIEWS_PATH, last_dir)
+        if len(dirs) == 0 and len(files) != SONGS_PER_FOLDER and root != last_dirpath:
+            diff = SONGS_PER_FOLDER - len(files)
+            if diff < 0:        # move files out of this folder and into the last folder
+                for i in range(diff):
+                    src_path = os.path.join(SPOTIFY_PREVIEWS_PATH, root, files[i])
+                    last_path = os.path.join(SPOTIFY_PREVIEWS_PATH, last_dir, files[i])
+                    print src_path, last_path
+                    # os.rename(src_path, last_path)
+            elif diff > 0:      # move files from the last folder and into this folder
+                for i in range(diff):
+                    src_dir = alph[cur_alph_indices[0]] + '/' + alph[cur_alph_indices[1]] + '/' + alph[cur_alph_indices[2]]
+                    src_dirpath = os.path.join(SPOTIFY_PREVIEWS_PATH, src_dir)
+                    src_files = os.listdir(src_dirpath)
+                    # print src_dirpath, len(src_files)
+
+                    # Possibly update src folder if no more files by going backwards (D/F/Z -> D/F/Y)
+                    if len(src_files) == 0:
+                        cur_alph_indices[2] -= 1
+                        if cur_alph_indices[2] < 0:
+                            cur_alph_indices[2] = 25
+                            cur_alph_indices[1] -= 1
+                        if cur_alph_indices[1] < 0:
+                            cur_alph_indices[2] = 25
+                            cur_alph_indices[1] = 25
+                            cur_alph_indices[0] -= 1
+                        src_dir = alph[cur_alph_indices[0]] + '/' + alph[cur_alph_indices[1]] + '/' + alph[cur_alph_indices[2]]
+                        src_dirpath = os.path.join(SPOTIFY_PREVIEWS_PATH, src_dir)
+                        src_files = os.listdir(src_dirpath)
+
+                    src_fp = os.path.join(src_dirpath, src_files[0])
+                    dest_fp = os.path.join(root, src_files[0])
+                    print src_fp, dest_fp, len(src_files)
+                    os.rename(src_fp, dest_fp)
+
 if __name__ == '__main__':
 
     # Set up commmand line arguments
@@ -382,8 +542,10 @@ if __name__ == '__main__':
     # parser.add_argument('--clean_msd_spotify_matched', dest='clean_msd_spotify_matched', action='store_true')
     parser.add_argument('--lookup_spotify_audio_features', dest='lookup_spotify_audio_features', action='store_true')
     parser.add_argument('--clean_spotify_audio_features', dest='clean_spotify_audio_features', action='store_true')
+    parser.add_argument('--put_spotify_af_in_db', dest='put_spotify_af_in_db', action='store_true')
+    parser.add_argument('--plot_af_stats', dest='plot_af_stats', action='store_true')
     parser.add_argument('--dl_previews_from_spotify', dest='dl_previews_from_spotify', action='store_true')
-    parser.add_argument('--spotify_key', dest='spotify_key', default=None)
+    parser.add_argument('--clean_dld_previews', dest='clean_dld_previews', action='store_true')
 
     cmdline = parser.parse_args()
 
@@ -397,5 +559,11 @@ if __name__ == '__main__':
         lookup_spotify_audio_features()
     elif cmdline.clean_spotify_audio_features:
         clean_spotify_audio_features()
+    elif cmdline.put_spotify_af_in_db:
+        put_spotify_af_in_db()
+    elif cmdline.plot_af_stats:
+        plot_af_stats()
     elif cmdline.dl_previews_from_spotify:
         dl_previews_from_spotify()
+    elif cmdline.clean_dld_previews:
+        clean_dld_previews()
