@@ -2,6 +2,8 @@
 
 import argparse
 import cPickle as pickle
+from itertools import chain
+import librosa
 import matplotlib.pylab as plt
 from multiprocessing.dummy import Pool as ThreadPool
 from natsort import natsorted
@@ -13,6 +15,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import sqlite3
 import string
+import tensorflow as tf
 import urllib
 
 MSD_FILES_PATH = 'data/msd/full/AdditionalFiles/'
@@ -25,6 +28,9 @@ SPOTIFY_AUDIO_FEATURES = 'data/spotify/spotify_audio_features.pkl'
 SPOTIFY_AF_DB = 'data/spotify/SpotifyAudioFeatures.db'
 SPOTIFY_PREVIEWS_PATH = 'data/spotify/previews/'
 SONGS_PER_FOLDER = 100   # 26 * 26 * 26 * 75 = 1757600
+
+MELGRAM_30S_SIZE = (96, 1407)
+NUMPTS_AND_MEANSTD_PATH = 'data/spotify/numpts_and_meanstd.pkl'
 
 ########################################################################################################################
 # Million song dataset (msd) and Spotify
@@ -40,6 +46,9 @@ SONGS_PER_FOLDER = 100   # 26 * 26 * 26 * 75 = 1757600
 # from the preview_url.
 ########################################################################################################################
 
+########################################################################################################################
+# Download and clean MSD-Spotify data
+########################################################################################################################
 def download_msd_previews_from_7digital():
     # Use https://github.com/mlachmish/MusicGenreClassification
     # NOTE: very weird bug - doesn't work if country is US or GB, works if it's ww
@@ -533,6 +542,170 @@ def clean_dld_previews():
                     print src_fp, dest_fp, len(src_files)
                     os.rename(src_fp, dest_fp)
 
+########################################################################################################################
+# Turn cleaned spotify data into tfrecords for training
+########################################################################################################################
+def write_spotify_to_tfrecords(split=[0.8, 0.1, 0.1]):
+    """
+    Create tfrecord file for each biconcept for train,valid,test
+    """
+    def _bytes_feature(value):
+        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+    def _float_feature(value):
+        return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+
+    # Make directory for tfrecords - train, valid, test
+    for name in ['train', 'valid', 'test']:
+        path = os.path.join(SPOTIFY_PATH, 'tfrecords', name)
+        if not os.path.exists(path):
+            os.system('mkdir -p {}'.format(path))
+
+    # Load audio features
+    af = pickle.load(open(SPOTIFY_AUDIO_FEATURES, 'rb'))
+
+    for root, dirs, files in os.walk(SPOTIFY_PREVIEWS_PATH):
+        # Group tfrecords at the second level, i.e. AB.tfrecord will have all the mp3's from A/B/*
+        # 2600 seems like a reasonable size
+        alphs = root.split(SPOTIFY_PREVIEWS_PATH)[1].replace('/','')        # eg. A, AB, AXY
+        if len(alphs) == 2:
+            print alphs
+
+            fps = [[os.path.join(root, d, f) for f in os.listdir(os.path.join(root, d)) if not f.startswith('.')] for d in dirs]
+            fps = list(chain(*fps))     # flatten
+
+            # Get tfrecord filepath and writer ready
+            tfrecords_filename = '{}.tfrecords'.format(alphs)
+            tr_tfrecords_fp = os.path.join(SPOTIFY_PATH, 'tfrecords', 'train', tfrecords_filename)
+            va_tfrecords_fp = os.path.join(SPOTIFY_PATH, 'tfrecords', 'valid', tfrecords_filename)
+            te_tfrecords_fp = os.path.join(SPOTIFY_PATH, 'tfrecords', 'test', tfrecords_filename)
+            tr_writer = tf.python_io.TFRecordWriter(tr_tfrecords_fp)
+            va_writer = tf.python_io.TFRecordWriter(va_tfrecords_fp)
+            te_writer = tf.python_io.TFRecordWriter(te_tfrecords_fp)
+            train_endidx = int(split[0] * len(fps))
+            valid_endidx = train_endidx + int(split[1] * len(fps))
+
+            # Convert images to tfrecord examples
+            for i, fp in enumerate(fps):
+                try:
+                    track_id = os.path.basename(fp).split('.')[0]
+                    tfrecord_ex_id = fp.split('/')[3] + fp.split('/')[4] + fp.split('/')[5] + '-' + track_id
+                    log_melgram = compute_log_melgram(fp)
+                    log_melgram_raw = log_melgram.tostring()
+                    valence_reg_label = af[track_id]['valence']
+                    print i, tfrecord_ex_id, valence_reg_label
+
+                    print np.fromstring(log_melgram_raw).shape
+
+                    example = tf.train.Example(features=tf.train.Features(feature={
+                        'id': _bytes_feature(tfrecord_ex_id),
+                        'log_melgram': _bytes_feature(log_melgram_raw),
+                        'valence_reg': _float_feature(valence_reg_label),
+                    }))
+
+                    # Figure out which writer to use (train, valid, test)
+                    if i < train_endidx:
+                        writer = tr_writer
+                    elif i >= train_endidx and i < valid_endidx:
+                        writer = va_writer
+                    else:
+                        writer = te_writer
+
+                    writer.write(example.SerializeToString())
+
+                except Exception as e:
+                    print fp, e
+
+    tr_writer.close()
+    va_writer.close()
+    te_writer.close()
+
+def compute_log_melgram(audio_path):
+    """
+    Compute a mel-spectrogram and return a np array of shape (96,1407), where
+    96 == #mel-bins and 1407 == #time frame
+    """
+
+    # Audio and mel-spectrogram parameters
+    SR = 12000
+    N_FFT = 512
+    N_MELS = 96
+    HOP_LEN = N_FFT / 2   # overlap 50%
+    DUR = 30              # in seconds
+
+    # Load audio and downsample
+    src, orig_sr = librosa.load(audio_path, sr=None)  # whole signal at native sampling rate
+    src = librosa.core.resample(src, orig_sr, SR)     # downsample down to SR
+
+    # Adjust size if necessary. Vast, vast majority of mp3's are 30 seconds and should require little adjustment.
+    n_sample = src.shape[0]
+    n_sample_fit = int(DUR * SR)
+    if n_sample < n_sample_fit:                       # if too short, pad with zeros
+        src = np.hstack((src, np.zeros((int(DUR*SR) - n_sample,))))
+    elif n_sample > n_sample_fit:                     # if too long, take middle section of length DURA seconds
+        src = src[(n_sample-n_sample_fit)/2:(n_sample+n_sample_fit)/2]
+
+    # Compute log mel spectrogram
+    logam = librosa.logamplitude
+    melgram = librosa.feature.melspectrogram
+    ret = logam(melgram(y =src, sr=SR, hop_length=HOP_LEN,
+                        n_fft=N_FFT, n_mels=N_MELS)**2,
+                ref_power=1.0)
+#     ret = ret[np.newaxis, np.newaxis, :]
+
+    if ret.shape != MELGRAM_30S_SIZE:
+        print ret.shape
+        return None
+    else:
+        return ret
+
+def precompute_numpts_and_meanstd_from_tfrecords():
+    """
+    From the tfrecords, calculate a) number of pts per train-valid-test split, and b) the per mel-bin mean and
+    stddev. This will be loaded and used in datasets.py.
+    """
+    # Add counts. TODO: this is slow (not a huge deal considering it's a one-time setup), but still...
+    numpts_and_meanstd = {}
+    numpts_and_meanstd['num_pts'] = {}
+    for split in ['train', 'valid', 'test']:
+        n = 0
+        mean = np.zeros(MELGRAM_30S_SIZE[0])        # (num mel-bins, )
+        std = np.zeros(MELGRAM_30S_SIZE[0])         # (num mel-bins, )
+        dirpath = os.path.join(SPOTIFY_PATH, 'tfrecords', split)
+        for tfrecord in os.listdir(dirpath):
+            if tfrecord.startswith('DRP'):          # Used to test while still saving tfrecords
+                continue
+
+            tfrecord_path = os.path.join(dirpath, tfrecord)
+            for record in tf.python_io.tf_record_iterator(tfrecord_path):
+                n += 1
+                if split == 'train':                # only calculate mean and std on train set
+                    example = tf.train.Example()
+                    example.ParseFromString(record)
+
+                    log_melgram_str = (example.features.feature['log_melgram'].bytes_list.value[0])
+                    log_melgram = np.fromstring(log_melgram_str)
+                    log_melgram = log_melgram.reshape(MELGRAM_30S_SIZE)
+
+                    # Update moving average of mean and std
+                    # New average = old average * (n-1)/n + new value /n
+                    mean = mean * (n-1)/n + log_melgram.mean(axis=1) / n
+                    std = std * (n-1)/n + log_melgram.std(axis=1) / n
+
+        numpts_and_meanstd['num_pts'][split] = n
+
+        if split == 'train':
+            mean = np.expand_dims(mean, 1)      # (num mel-bins, ) -> (num mel-bins, 1)
+            std = np.expand_dims(std, 1)        # (num mel-bins, ) -> (num mel-bins, 1)
+            numpts_and_meanstd['mean'] = mean
+            numpts_and_meanstd['std'] = std
+
+    # Save
+    with open(NUMPTS_AND_MEANSTD_PATH, 'wb') as f:
+        pickle.dump(numpts_and_meanstd, f, protocol=2)
+
+    print numpts_and_meanstd['num_pts']
+
 if __name__ == '__main__':
 
     # Set up commmand line arguments
@@ -546,6 +719,9 @@ if __name__ == '__main__':
     parser.add_argument('--plot_af_stats', dest='plot_af_stats', action='store_true')
     parser.add_argument('--dl_previews_from_spotify', dest='dl_previews_from_spotify', action='store_true')
     parser.add_argument('--clean_dld_previews', dest='clean_dld_previews', action='store_true')
+    parser.add_argument('--write_spotify_to_tfrecords', dest='write_spotify_to_tfrecords', action='store_true')
+    parser.add_argument('--precompute_numpts_and_meanstd_from_tfrecords', dest='precompute_numpts_and_meanstd_from_tfrecords',
+                        action='store_true')
 
     cmdline = parser.parse_args()
 
@@ -567,3 +743,7 @@ if __name__ == '__main__':
         dl_previews_from_spotify()
     elif cmdline.clean_dld_previews:
         clean_dld_previews()
+    elif cmdline.write_spotify_to_tfrecords:
+        write_spotify_to_tfrecords()
+    elif cmdline.precompute_numpts_and_meanstd_from_tfrecords:
+        precompute_numpts_and_meanstd_from_tfrecords()

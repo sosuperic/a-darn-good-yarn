@@ -26,8 +26,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
 import sys
-import hdf5_getters
+
 import numpy as np
+
+import hdf5_getters
 
 
 def die_with_usage():
@@ -108,7 +110,7 @@ if __name__ == '__main__':
     # print them
     for getter in getters:
         try:
-            res = hdf5_getters.__getattribute__(getter)(h5,songidx)
+            res = hdf5_getters.__getattribute__(getter)(h5, songidx)
         except AttributeError, e:
             if summary:
                 continue

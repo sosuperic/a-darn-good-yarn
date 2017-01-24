@@ -26,10 +26,11 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
+import glob
 import os
 import sys
 import time
-import glob
+
 try:
     import scipy.io as sio
     import numpy as np
@@ -108,7 +109,7 @@ def transfer(h5path,matpath=None,force=False):
                 gettername = getter[4:]
                 if nSongs > 1:
                     gettername += str(songidx+1)
-                data = hdf5_getters.__getattribute__(getter)(h5,songidx)
+                data = hdf5_getters.__getattribute__(getter)(h5, songidx)
                 matdata[gettername] = data
     except MemoryError:
         print 'Memory Error with file:',h5path
