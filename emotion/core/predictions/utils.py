@@ -1,28 +1,14 @@
 # Utils for handling predictions
-import numpy as np
 
-def smooth(x, window_len=48, window='hanning'):
-    if x.ndim != 1:
-        raise ValueError, "smooth only accepts 1 dimension arrays."
-    if x.size < window_len:
-        raise ValueError, "Input vector needs to be bigger than window size."
-    if window_len < 3:
-        return x
-    if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
-        raise ValueError, "Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'"
-    s = np.r_[2 * x[0] - x[window_len-1::-1], x, 2 * x[-1] - x[-1:-window_len:-1]]
-    if window == 'flat': #moving average
-        w = np.ones(window_len,'d')
-    else:
-        w=eval('np.' + window + '(window_len)')
-    y = np.convolve(w/w.sum(), s, mode='same')
-    return y[window_len:-window_len+1]
+from fastdtw import fastdtw
+import numpy as np
+from scipy.spatial.distance import euclidean
 
 def DTWDistance(s1, s2, w=None):
-    '''
+    """
     Calculates dynamic time warping Euclidean distance between two
     sequences. Option to enforce locality constraint for window w.
-    '''
+    """
     DTW={}
 
     if w:
@@ -52,11 +38,18 @@ def DTWDistance(s1, s2, w=None):
 
     return np.sqrt(DTW[len(s1)-1, len(s2)-1])
 
+def fastdtw_dist(s1, s2, dist=euclidean):
+    """
+    Calculate dtw distance in O(n) time and O(n) memory
+    """
+    distance, path = fastdtw(s1, s2, dist=euclidean)
+    return distance
+
 def LB_Keogh(s1, s2, r):
-    '''
+    """
     Calculates LB_Keough lower bound to dynamic time warping. Linear
     complexity compared to quadratic complexity of dtw.
-    '''
+    """
     LB_sum=0
     for ind,i in enumerate(s1):
 
@@ -69,3 +62,20 @@ def LB_Keogh(s1, s2, r):
             LB_sum=LB_sum+(i-lower_bound)**2
 
     return np.sqrt(LB_sum)
+
+def smooth(x, window_len=48, window='hanning'):
+    if x.ndim != 1:
+        raise ValueError, "smooth only accepts 1 dimension arrays."
+    if x.size < window_len:
+        raise ValueError, "Input vector needs to be bigger than window size."
+    if window_len < 3:
+        return x
+    if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
+        raise ValueError, "Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'"
+    s = np.r_[2 * x[0] - x[window_len-1::-1], x, 2 * x[-1] - x[-1:-window_len:-1]]
+    if window == 'flat': #moving average
+        w = np.ones(window_len,'d')
+    else:
+        w=eval('np.' + window + '(window_len)')
+    y = np.convolve(w/w.sum(), s, mode='same')
+    return y[window_len:-window_len+1]

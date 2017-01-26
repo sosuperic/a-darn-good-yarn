@@ -673,7 +673,7 @@ def precompute_numpts_and_meanstd_from_tfrecords():
         std = np.zeros(MELGRAM_30S_SIZE[0])         # (num mel-bins, )
         dirpath = os.path.join(SPOTIFY_PATH, 'tfrecords', split)
         for tfrecord in os.listdir(dirpath):
-            if tfrecord.startswith('DRP'):          # Used to test while still saving tfrecords
+            if tfrecord.startswith('HP'):          # Used to test while still saving tfrecords
                 continue
 
             tfrecord_path = os.path.join(dirpath, tfrecord)

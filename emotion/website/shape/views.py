@@ -19,7 +19,7 @@ from core.utils.utils import get_credits_idx
 FORMATS = ['films', 'shorts', 'ads']
 
 VIDEOS_PATH = 'shape/static/videos/'
-OUTPUTS_PATH = 'shape/outputs/'
+OUTPUTS_DATA_PATH = 'shape/outputs/cluster/data/old1/'
 
 # For One Video view - (if else for local vs shannon)
 PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
@@ -156,12 +156,13 @@ def setup_initial_data():
     for fmt in ['films', 'shorts']:#FORMATS:
         try:
             # Clusters view
-            ts[fmt] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_FN[fmt]), 'rb'))
+            ts[fmt] = pickle.load(open(os.path.join(OUTPUTS_DATA_PATH, TS_FN[fmt]), 'rb'))
             ts[fmt] = [list(arr) for arr in ts[fmt]]        # make it serializable
-            ts_idx2title[fmt] = pickle.load(open(os.path.join(OUTPUTS_PATH, 'cluster/data', TS_IDX2TITLE_FN[fmt]), 'rb'))
+            ts_idx2title[fmt] = pickle.load(open(os.path.join(OUTPUTS_DATA_PATH, TS_IDX2TITLE_FN[fmt]), 'rb'))
 
             # One video view - adjusting window size
             title2pred_len[fmt] = {}
+
             for ts_idx, title in ts_idx2title[fmt].items():
                 if title in title2vidpath:
                     vid_framespath = os.path.join(title2vidpath[title], 'frames')
@@ -179,9 +180,9 @@ def setup_initial_data():
                 centroids_fn = CENTROIDS_FN[fmt].format(k)
                 assignments_fn = ASSIGNMENTS_FN[fmt].format(k)
                 ts_dists_fn = TS_DISTS_FN[fmt].format(k)
-                centroids_path = os.path.join(OUTPUTS_PATH, 'cluster/data', centroids_fn)
-                assignments_path = os.path.join(OUTPUTS_PATH, 'cluster/data', assignments_fn)
-                ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
+                centroids_path = os.path.join(OUTPUTS_DATA_PATH, centroids_fn)
+                assignments_path = os.path.join(OUTPUTS_DATA_PATH, assignments_fn)
+                ts_dists_path = os.path.join(OUTPUTS_DATA_PATH, ts_dists_fn)
                 if os.path.exists(centroids_path) and os.path.exists(assignments_path) and os.path.exists(ts_dists_path):
                     clusters[fmt][k] = {}
                     with open(centroids_path) as f:
@@ -192,7 +193,7 @@ def setup_initial_data():
                     # TS Distances to centroids
                     # ts_dists: dict, key is int (centroid_idx), value = dict (key is member_idx, value is distance)
                     ts_dists_fn = TS_DISTS_FN[fmt].format(k)
-                    ts_dists_path = os.path.join(OUTPUTS_PATH, 'cluster/data', ts_dists_fn)
+                    ts_dists_path = os.path.join(OUTPUTS_DATA_PATH, ts_dists_fn)
                     if os.path.exists(ts_dists_path):
                         with open(ts_dists_path) as f:
                             kdists = pickle.load(f)      # key is ts_index, value is distance to its centroid
@@ -233,7 +234,8 @@ def shape():
     """
     global format2titles, \
         cur_format, cur_title, cur_pd_df, cur_vid_framepaths, \
-        clusters, ts_idx2title, ts
+        clusters, ts_idx2title, ts, \
+        title2pred_len
 
     # Get information for *first* video to show
     # cur_format = format2titles.keys()[0]
