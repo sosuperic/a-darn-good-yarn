@@ -85,8 +85,9 @@ class Analysis(object):
                 vals = vals[:credits_idx]
 
             # Skip if window size too big
-            # If w is not None, then use uniform w for all videos
-            if (w is not None) and (len(vals) <= w):
+            # If w is not None and is > 1 , then use uniform w for all videos
+            if (w is not None) and (w >= 1.0) and (len(vals) <= w):
+            # if (w is not None) and (len(vals) <= w):
                 self.logger.info(u'{} length is {}, less than: {}, skipping'.format(
                     unicode(vdp, 'utf-8'), len(vals), w))  # unicode for titles
                 continue
@@ -99,7 +100,13 @@ class Analysis(object):
 
             # Smooth and downsample
             # If w is None, then use 0.07 * video length. Got this val bc using w ~= 500 for films, avg. film is ~ 7200
-            cur_w = w if w else int(0.07 * len(vals))
+            if w is None:
+                cur_w = int(0.07 * len(vals))
+            elif w < 1:
+                cur_w = int(w * len(vals))
+            elif w >= 1:
+                cur_w = w
+            # cur_w = w if w else int(0.07 * len(vals))
             smoothed = smooth(vals, window_len=cur_w)
             downsampled = smoothed[::ds]
 
@@ -562,7 +569,7 @@ class Analysis(object):
 
     def _load_ts(self, vids_dirpath, n, w, ds, max_nframes, pred_fn):
         """
-        Load timeseries (np array of dim [num_timeseries, max_len]) saved by prepare_and_save_timeseries(). Set 
+        Load timeseries (np array of dim [num_timeseries, max_len]) saved by prepare_and_save_timeseries(). Set
         self fields because this method is called before clustering. Once clustering is done, will need these fields
         to save output.
         """
@@ -573,7 +580,7 @@ class Analysis(object):
         self.ds = ds
         self.max_nframes = max_nframes
         self.pred_fn = pred_fn
-        
+
         str = self._get_TS_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn)
         path = self._get_ts_path(str)
         ts = pickle.load(open(path, 'rb'))
@@ -810,7 +817,9 @@ if __name__ == '__main__':
     parser.add_argument('--vids_dirpath', dest='vids_dirpath', default=None,
                         help='folder to traverse for predictions, e.g. data/videos/films')
     parser.add_argument('-n', dest='n', default=None, help='n - get from filename')
-    parser.add_argument('-w', dest='w', type=int, default=None, help='window size for smoothing predictions')
+    parser.add_argument('-w', dest='w', type=float, default=None,
+                        help='window size for smoothing predictions.'
+                             'If w is a decimal, then it is used as the ratio of the length of a video')
     parser.add_argument('-ds', dest='ds', type=int, default=None, help='downsample rate')
     parser.add_argument('--max_nframes', dest='max_nframes', type=int, default=float('inf'),
                         help='filter out videos with more frames than this. May be used with shorts to filter out'
