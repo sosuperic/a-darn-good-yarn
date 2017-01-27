@@ -5,12 +5,13 @@ import cPickle as pickle
 import json
 import numpy as np
 import os
+from prepare_data import MELGRAM_30S_SIZE
 import tensorflow as tf
 
+
 TFRECORDS_PATH = 'data/spotify/tfrecords'
-MELGRAM_30S_SIZE = [96, 1407]
-MELGRAM_20S_SIZE = [96, 938]
 NUMPTS_AND_MEANSTD_PATH = 'data/spotify/numpts_and_meanstd.pkl'
+MELGRAM_20S_SIZE = [96, 938]
 
 #######################################################################################################################
 ###
@@ -25,6 +26,8 @@ class Dataset(object):
 
         self.__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
         self.__cwd__ = os.path.realpath(os.getcwd())
+
+        self.setup_obj()
 
     def setup_obj(self):
         if self.params['obj'] == 'valence_reg':
@@ -48,7 +51,7 @@ class Dataset(object):
 ### SPOTIFY DATASET
 ###
 ########################################################################################################################
-class SpotifyDataset(object):
+class SpotifyDataset(Dataset):
     def __init__(self, params):
         super(SpotifyDataset, self).__init__(params)
         self.load_numpts_and_meanstd()
@@ -64,6 +67,10 @@ class SpotifyDataset(object):
             self.num_pts[split] = numpts_and_meanstd['num_pts'][split]
         self.mean = numpts_and_meanstd['mean']      # (number of mel-bins, 1)
         self.std = numpts_and_meanstd['std']        # (number of mel-bins, 1)
+
+        print self.num_pts
+        print self.mean.shape
+        print self.std.shape
 
     ####################################################################################################################
     # Getting tfrecords list
@@ -83,7 +90,6 @@ class SpotifyDataset(object):
                 # files_list['test'] = self._get_tfrecords_files_list('test')
         elif self.params['mode'] == 'test':
             files_list = self._get_tfrecords_files_list('test')
-
 
         return files_list
 
@@ -135,11 +141,14 @@ class SpotifyDataset(object):
                 'valence_reg': tf.FixedLenFeature([], tf.float32)
             })
 
-        feats = tf.decode_raw(features['log_melgram'])
+        feats = tf.decode_raw(features['log_melgram'], tf.float64)
+        feats = tf.cast(feats, tf.float32)
         # feats = tf.decode_raw(features['log_melgram'], tf.uint8)
         feats = tf.reshape(feats, MELGRAM_30S_SIZE)
         feats.set_shape(MELGRAM_30S_SIZE)
         feats = self.preprocess_feats(feats)
+        feats = tf.expand_dims(feats, 2)        # (batch, mel-bins, time) -> (batch, mel-bins, time, 1)
+
         label = features[self.params['obj']]
 
         return feats, label

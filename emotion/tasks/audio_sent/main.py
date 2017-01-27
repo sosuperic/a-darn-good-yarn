@@ -35,7 +35,7 @@ if __name__ == '__main__':
 
     # Job specific training params
     parser.add_argument('-lr', dest='lr', type=float, default=None, help='learning rate')
-    parser.add_argument('-optim', dest='optim', default=None,
+    parser.add_argument('--optim', dest='optim', default=None,
                         help='sgd,adadelta,adagrad,adam,rmsprop; optimziation method')
     parser.add_argument('--momentum', dest='momentum', type=float, default=None, help='momentum')
     parser.add_argument('--weight_decay', dest='weight_decay', type=float, default=None, help='weight decay')

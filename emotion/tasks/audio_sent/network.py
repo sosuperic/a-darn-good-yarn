@@ -29,8 +29,8 @@ class Network(object):
             tr_clip_batch, self.tr_label_batch = splits['train']['clip_batch'], splits['train']['label_batch']
             va_clip_batch, va_label_batch = splits['valid']['clip_batch'], splits['valid']['label_batch']
 
-            # Get model
-            model = self._get_model(sess, tr_clip_batch)
+            # # Get model
+            model = self._get_model(sess, tr_clip_batch, is_training=True)
 
             # Loss
             self._get_loss(model)
@@ -51,6 +51,9 @@ class Network(object):
             # Initialize after optimization - this needs to be done after adam
             coord, threads = self._initialize(sess)
 
+            # clips = sess.run(tr_clip_batch)
+            # print clips[0], clips[0].shape
+
             # Training
             saver = tf.train.Saver(max_to_keep=None)
             for i in range(self.params['epochs']):
@@ -58,11 +61,10 @@ class Network(object):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_tr_batches = self.dataset.get_num_batches('train')
                 for j in range(num_tr_batches):
-                    _, imgs, last_fc, loss_val, acc_val, summary = sess.run(
-                        [train_step, tr_clip_batch, model.last_fc, self.loss, self.acc, summary_op])
+                    _, imgs, out, loss_val, summary = sess.run(
+                        [train_step, tr_clip_batch, model.out, self.loss, summary_op])
 
                     self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
-                    self.logger.info('................... -- Acc: {}'.format(acc_val))
 
                     # Write summary
                     if j % 10 == 0:
@@ -79,14 +81,12 @@ class Network(object):
                 if (i+1) % self.params['val_every_epoch'] == 0:
                     num_va_batches = self.dataset.get_num_batches('valid')
                     for j in range(num_va_batches):
-                        img_batch, label_batch = sess.run([va_clip_batch, va_label_batch])
-                        loss_val, acc_val, loss_summary, acc_summary = sess.run([self.loss, self.acc,
-                                                                    self.loss_summary, self.acc_summary],
-                                                              feed_dict={'img_batch:0': img_batch,
-                                                                        'label_batch:0': label_batch})
+                        clip_batch, label_batch = sess.run([va_clip_batch, va_label_batch])
+                        loss_val, loss_summary, acc_summary = sess.run(
+                            [self.loss, self.loss_summary],
+                            feed_dict={'clip_batch:0': clip_batch, 'label_batch:0': label_batch})
 
                         self.logger.info('Valid minibatch {} / {} -- Loss: {}'.format(j, num_va_batches, loss_val))
-                        self.logger.info('................... -- Acc: {}'.format(acc_val))
 
                         # Write summary
                         if j % 10 == 0:
@@ -138,18 +138,9 @@ class Network(object):
             # print sess.run(tf.trainable_variables()[0])
 
             # Test
-            # overall_correct = 0
-            # overall_num = 0
             for j in range(num_batches):
-                loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op])
-
-                # overall_correct += int(acc_val * te_clip_batch.get_shape().as_list()[0])
-                # overall_num += te_clip_batch.get_shape().as_list()[0]
-                # overall_acc = float(overall_correct) / overall_num
-
+                loss_val, summary = sess.run([self.loss, summary_op])
                 self.logger.info('Test minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
-                # self.logger.info('................... -- Acc: {}'.format(acc_val))
-                # self.logger.info('Overall acc: {}'.format(overall_acc))
 
                 # Write summary
                 if j % 10 == 0:
@@ -254,17 +245,16 @@ class Network(object):
         # _, self.logger = setup_logging(save_path=logs_path)
         return logger
 
-    def _get_model(self, sess, clip_batch):
+    def _get_model(self, sess, clip_batch, is_training=None):
         """Return model (sess is required to load weights for vgg)"""
         # Get model
         model = None
         self.logger.info('Making {} model'.format(self.params['arch']))
         if self.params['arch'] == 'cnn':
             model = AudioCNN(
-                # batch_size=self.params['batch_size'],
-                output_dim=self.output_dim,
+                # output_dim=self.output_dim,
                 clips=clip_batch,
-                dropout_keep=self.params['dropout'])
+                is_training=is_training)
 
         return model
 
@@ -272,7 +262,7 @@ class Network(object):
         label_batch = self.tr_label_batch if self.params['mode'] == 'train' else self.te_label_batch
         label_batch_op = tf.placeholder_with_default(label_batch, shape=[self.params['batch_size']],
                                                      name='label_batch')
-        self.loss = tf.sqrt(tf.reduce_mean(tf.square(tf.sub(model.last_fc, label_batch_op))))
+        self.loss = tf.sqrt(tf.reduce_mean(tf.square(tf.sub(model.out, label_batch_op))))
 
     def _get_summary_ops(self):
         """Define summaries and return summary_op"""

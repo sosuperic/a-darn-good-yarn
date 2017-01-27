@@ -577,6 +577,11 @@ def write_spotify_to_tfrecords(split=[0.8, 0.1, 0.1]):
             # Get tfrecord filepath and writer ready
             tfrecords_filename = '{}.tfrecords'.format(alphs)
             tr_tfrecords_fp = os.path.join(SPOTIFY_PATH, 'tfrecords', 'train', tfrecords_filename)
+
+            if os.path.exists(tr_tfrecords_fp):
+                print '{} exists, skipping'.format(tr_tfrecords_fp)
+                continue
+
             va_tfrecords_fp = os.path.join(SPOTIFY_PATH, 'tfrecords', 'valid', tfrecords_filename)
             te_tfrecords_fp = os.path.join(SPOTIFY_PATH, 'tfrecords', 'test', tfrecords_filename)
             tr_writer = tf.python_io.TFRecordWriter(tr_tfrecords_fp)
@@ -595,7 +600,7 @@ def write_spotify_to_tfrecords(split=[0.8, 0.1, 0.1]):
                     valence_reg_label = af[track_id]['valence']
                     print i, tfrecord_ex_id, valence_reg_label
 
-                    print np.fromstring(log_melgram_raw).shape
+                    # print np.fromstring(log_melgram_raw).shape
 
                     example = tf.train.Example(features=tf.train.Features(feature={
                         'id': _bytes_feature(tfrecord_ex_id),
