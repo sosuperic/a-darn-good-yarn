@@ -21,7 +21,6 @@ FORMATS = ['films', 'shorts', 'ads']
 
 VIDEOS_PATH = 'shape/static/videos/'
 OUTPUTS_DATA_PATH = 'shape/outputs/cluster/data/'
-# OUTPUTS_DATA_PATH = 'shape/outputs/cluster/data/old1/'
 
 # For One Video view - (if else for local vs shannon)
 PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
@@ -44,17 +43,45 @@ TS_STD_FN = \
      'shorts': 'ts-std_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
      'ads': None}
 CENTROIDS_FN = \
-    {'films': 'centroids_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
-     'shorts': 'centroids_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it15-r45.pkl',
-     'ads': None}
-ASSIGNMENTS_FN = \
-    {'films': 'assignments_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
-     'shorts': 'assignments_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it15-r45.pkl',
+    {'films': 'kmedoids-centroids_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it100-rNone.pkl',
+     'shorts': 'kmedoids-centroids_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it100-rNone.pkl',
      'ads': None}
 TS_DISTS_FN = \
-    {'films': 'ts-dists_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
-     'shorts': 'ts-dists_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it5-r45.pkl',
+    {'films': 'kmedoids-ts-dists_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it100-rNone.pkl',
+     'shorts': 'kmedoids-ts-dists_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it100-rNone.pkl',
      'ads': None}
+
+# TS_FN = \
+#     {'films': 'ts_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
+#      'shorts': 'ts_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
+#      'ads': None}
+# TS_IDX2TITLE_FN = \
+#     {'films': 'ts-idx2title_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
+#      'shorts': 'ts-idx2title_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
+#      'ads': None}
+# TS_MEAN_FN = \
+#     {'films': 'ts-mean_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
+#      'shorts': 'ts-mean_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
+#      'ads': None}
+# TS_STD_FN = \
+#     {'films': 'ts-std_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
+#      'shorts': 'ts-std_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
+#      'ads': None}
+# CENTROIDS_FN = \
+#     {'films': 'centroids_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
+#      'shorts': 'centroids_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it15-r45.pkl',
+#      'ads': None}
+# ASSIGNMENTS_FN = \
+#     {'films': 'assignments_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
+#      'shorts': 'assignments_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it15-r45.pkl',
+#      'ads': None}
+# TS_DISTS_FN = \
+#     {'films': 'ts-dists_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
+#      'shorts': 'ts-dists_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it5-r45.pkl',
+#      'ads': None}
+
+
+# OUTPUTS_DATA_PATH = 'shape/outputs/cluster/data/old1/'
 # TS_FN = \
 #     {'films': 'ts_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
 #      'shorts': 'ts_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
@@ -224,18 +251,13 @@ def setup_initial_data():
             try:
                 k = str(k)          # use string so it's treated as a js Object instead of an array in template
                 centroids_fn = CENTROIDS_FN[fmt].format(k)
-                assignments_fn = ASSIGNMENTS_FN[fmt].format(k)
                 ts_dists_fn = TS_DISTS_FN[fmt].format(k)
                 centroids_path = os.path.join(OUTPUTS_DATA_PATH, centroids_fn)
-                assignments_path = os.path.join(OUTPUTS_DATA_PATH, assignments_fn)
                 ts_dists_path = os.path.join(OUTPUTS_DATA_PATH, ts_dists_fn)
-                if os.path.exists(centroids_path) and \
-                        os.path.exists(assignments_path) and os.path.exists(ts_dists_path):
+                if os.path.exists(centroids_path) and os.path.exists(ts_dists_path):
                     clusters[fmt][k] = {}
                     with open(centroids_path, 'rb') as f:
                         clusters[fmt][k]['centroids'] = pickle.load(f)
-                    with open(assignments_path, 'rb') as f:
-                        clusters[fmt][k]['assignments'] = pickle.load(f)
 
                     # TS Distances to centroids
                     # ts_dists: dict, key is int (centroid_idx), value = dict (key is member_idx, value is distance)
@@ -253,8 +275,8 @@ def setup_initial_data():
                         clusters[fmt][k]['closest'] = centroid2closest
 
                 else:
-                    print 'Centroids/assignments/ts_dists path doesnt exist:\n{}\n{}\n{}'.format(
-                        centroids_path, assignments_path, ts_dists_path)
+                    print 'Centroids/assignments/ts_dists path doesnt exist:\n{}\n{}'.format(
+                        centroids_path, ts_dists_path)
             except Exception as e:
                 print e
 

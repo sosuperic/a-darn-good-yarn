@@ -17,7 +17,7 @@ import scipy.interpolate as interp
 import sqlite3
 
 # from core.predictions.spatio_time_cluster import *
-from core.predictions.dtw_kmeans import *
+from core.predictions.ts_cluster import *
 from core.predictions.hierarchical_cluster import *
 from core.predictions.utils import DTWDistance, fastdtw_dist, LB_Keogh, smooth
 from core.utils.utils import setup_logging, get_credits_idx
@@ -29,7 +29,7 @@ OUTPUTS_PATH = 'outputs/cluster/'
 VIDEOS_PATH = 'data/videos'
 
 TS_STR = 'dir{}-n{}-w{}-ds{}-maxnf{}-fn{}'
-KMEANS_STR = 'dir{}-n{}-w{}-ds{}-maxnf{}-fn{}-k{}-it{}-r{}'
+KCLUST_STR = 'dir{}-n{}-w{}-ds{}-maxnf{}-fn{}-k{}-it{}-r{}'
 DIST_MATRIX_STR = GROUP_COHERENCE_STR = 'dir{}-n{}-w{}-ds{}-maxnf{}-fn{}-r{}'
 HDBSCAN_STR = 'dir{}-n{}-w{}-ds{}-maxnf{}-fn{}-r{}-mcs{}-ms{}'
 
@@ -91,7 +91,7 @@ class Analysis(object):
                     unicode(vdp, 'utf-8'), len(vals), w))  # unicode for titles
                 continue
 
-            # Skip if shorts too long (Only 7 are longer than 30 min: 30.03, 36.00, 41.12, 48.00, 49.60, 53.50))
+            # Skip if video too long (e.g. only 7 shorts are longer than 30 min: 30.03, 36.00, 41.12, 48.00, 49.60, 53.50))
             if len(vals) > max_nframes:
                 self.logger.info(u'{} length is {}, greater than max_nframes ({})'.format(
                     unicode(vdp, 'utf-8'), len(vals),  max_nframes))  # unicode for titles
@@ -131,7 +131,6 @@ class Analysis(object):
         std = np.expand_dims(ts.std(axis=1), 1)             # (num_timeseries, 1)
         ts = (ts - mean) / std
 
-
         # Save time series data
         # Save mean and std so we can map back to 0-1 later
         self.logger.info('Saving time series data')
@@ -144,7 +143,6 @@ class Analysis(object):
         self.logger.info('Time series length (max): {}'.format(ts.shape[1]))
 
         return ts
-
 
     ####################################################################################################################
     # Cluster
@@ -166,6 +164,11 @@ class Analysis(object):
             for k in k.split(','):
                 print '=' * 100
                 self.cluster_ts_kmeans(data, int(k), it, r)
+        elif method == 'kmedoids':
+            dist_matrix = self._try_load_dtw_dist_matrix(self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn, r)
+            for k in k.split(','):
+                print '=' * 100
+                self.cluster_ts_kmedoids(data, dist_matrix, int(k), it)
         elif method == 'hierarchical':
             self.cluster_ts_hierarchical(data)
         elif method == 'hdbscan':
@@ -180,18 +183,14 @@ class Analysis(object):
         Parameters
         ----------
         data: np of dimension [num_timeseries, max_len]
-        method: str, clustering method to use
         k: number of clusters (for parametric clustering techniques)
+        it: number of iterations
+        r: window size for KB_Keogh
         """
         # Cluster
         self.logger.info('K-means clustering: k={}, it={}, r={}'.format(k, it, r))
         clusterer = ts_cluster(num_clust=k)
         clusterer.k_means_clust(data, it, 2, r)     # num_iter, w, r
-
-        # # TODO: Debug / investigate this. See solution 1 in commit message about main problem with centroids
-        # self.logger.info('Trying to load DTW-based distance matrix')
-        # dist_matrix = self._try_load_dtw_dist_matrix(self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn, r)
-        # clusterer.k_means_clust_modifcentroids(data, dist_matrix, it, 2, r)
 
         # Un-normalize so that saved outputs -- centroids are of sentiment in range 0,1
         # Mean and std is per time series, i.e. one per video
@@ -205,7 +204,32 @@ class Analysis(object):
 
         # Save outputs
         self.logger.info('Saving centroids, assignments, figure')
-        self._save_kmeans(clusterer, self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn, k, it, r)
+        self._save_kclust(clusterer, 'kmeans', self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn, k, it, r)
+
+    def cluster_ts_kmedoids(self, data, dist_matrix, k, it):
+        # Cluster
+        self.logger.info('K-means clustering: k={}, it={}'.format(k, it))
+        clusterer = ts_cluster(num_clust=k)
+         # TODO: Debug / investigate this. See solution 1 in commit message about main problem with centroids
+        self.logger.info('Trying to load DTW-based distance matrix')
+        # clusterer.k_means_clust_modifcentroids(data, dist_matrix, it, 2, r)
+        clusterer.k_medoids_clust(data, dist_matrix, it)
+
+        # Un-normalize so that saved outputs -- centroids are of sentiment in range 0,1
+        # Mean and std is per time series, i.e. one per video
+        # Not sure if this is the 'right' way to do it, but just take the mean of the mean and std across all videos
+        mean = self._load_ts_mean(self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn)
+        std = self._load_ts_std(self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn)
+        mean = mean.mean()
+        std = std.mean()
+        for i, c in enumerate(clusterer.centroids):
+            clusterer.centroids[i] = list((np.array(c) * std) + mean)
+        for i, m in enumerate(clusterer.medoids):
+            clusterer.medoids[i] = list((np.array(m) * std) + mean)
+
+        # Save outputs
+        self.logger.info('Saving centroids, assignments, figure')
+        self._save_kclust(clusterer, 'kmedoids', self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn, k, it, None)
 
     def cluster_ts_hierarchical(self, data):
         """
@@ -263,7 +287,7 @@ class Analysis(object):
             indices = [(i,j) for i in range(len(data)) for j in range(i+1, len(data))]      # only calculate upper triangle
             with ProcessPoolExecutor(max_workers=4) as executer:
                 fs = []
-                for i,j in indices:
+                for i, j in indices:
                     future = executer.submit(LB_Keogh, data[i], data[j], r)
                     future.add_done_callback(partial(callback, i, j))
                     fs.append(future)
@@ -273,14 +297,13 @@ class Analysis(object):
             self.logger.info('Saving DTW-based distance matrix')
             self._save_dtw_dist_matrix(dist_matrix, self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn, r)
 
-
         # Cluster
         self.logger.info('Clustering')
         # mcs = mcs if mcs else len(data) / 20
         # ms = ms if ms else len(data) / 40
         clusterer = hdbscan.HDBSCAN(min_cluster_size=mcs,
                                     min_samples=ms,
-                                    metric='precomputed')#,
+                                    metric='precomputed')  #,
                                     # gen_min_span_tree=True)
         clusterer.fit(dist_matrix)
 
@@ -304,9 +327,10 @@ class Analysis(object):
     ####################################################################################################################
     # Compute and save distances
     ####################################################################################################################
-    def compute_kmeans_error(self, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
+    def compute_kclust_error(self, alg, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
         """
         - Compute sum_over_series{DTWDistance(series, centroid} for each k., basically WCSS
+        - alg: kmeans or kmedoids
         - Used to determine optimal k
         - k is a comma-separated list
         """
@@ -315,7 +339,7 @@ class Analysis(object):
             cur_k = int(cur_k)
             error = 0.0
             try:
-                ts_dists = self._load_ts_dists(vids_dirpath, n, w, ds, max_nframes, pred_fn, cur_k, it, r)
+                ts_dists = self._load_ts_dists(alg, vids_dirpath, n, w, ds, max_nframes, pred_fn, cur_k, it, r)
                 for c_idx, c_members in ts_dists.items():
                     for m_idx, dist in c_members.items():
                         error += dist
@@ -325,13 +349,13 @@ class Analysis(object):
             except Exception as e:
                 print e
 
-        self._save_kmeans_error(k2error, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
+        self._save_kclust_error(k2error, alg, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
 
     ####################################################################################################################
     # Compute and save distances
     ####################################################################################################################
     # TODO: Deprecate this. ts_dists are now saved part of dtw_kmeans
-    def compute_kmeans_clusters_ts_dists(self, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
+    def compute_kclust_clusters_ts_dists(self, alg, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
         """
         Compute and save distances between each time series and its centroid for k means clusters
 
@@ -375,7 +399,7 @@ class Analysis(object):
                         i += 1
 
                 # Save
-                self._save_ts_dists(ts_dists, vids_dirpath, n, w, ds, max_nframes, pred_fn, cur_k, it, r)
+                self._save_ts_dists(ts_dists, alg, vids_dirpath, n, w, ds, max_nframes, pred_fn, cur_k, it, r)
 
             except Exception as e:
                 self.logger.info(e)
@@ -418,7 +442,7 @@ class Analysis(object):
             indices = [(i,j) for i in range(len(titles)) for j in range(i+1, len(titles))]
             with ProcessPoolExecutor(max_workers=4) as executer:
                 fs = []
-                for i,j in indices:
+                for i, j in indices:
                     title1 = titles[i]
                     title2 = titles[j]
                     if (title1 in title2ts_idx) and (title2 in title2ts_idx):
@@ -488,7 +512,6 @@ class Analysis(object):
 
     def get_shorts_groups(self):
         pass
-
 
     ####################################################################################################################
     # Helper functions
@@ -574,27 +597,35 @@ class Analysis(object):
         std = pickle.load(open(path, 'rb'))
         return std
 
-    def _save_kmeans(self, clusterer, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
+    def _save_kclust(self, clusterer, alg, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
         """
         Save centroids, assignments, plots, and ts-distsfor kmeans
         """
-        params_str = self._get_KMEANS_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
-        centroids_path = self._get_centroids_path(params_str)
-        assignments_path = self._get_assignments_path(params_str)
+        params_str = self._get_KCLUST_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
+        centroids_path = self._get_centroids_path(alg, params_str)
+        assignments_path = self._get_assignments_path(alg, params_str)
         with open(centroids_path, 'wb') as f:
             pickle.dump(clusterer.centroids, f, protocol=2)
         with open(assignments_path, 'wb') as f:
             pickle.dump(clusterer.assignments, f, protocol=2)
 
-        # Plots
+        # Plot centroids
         for i, c in enumerate(clusterer.centroids):
             plt.plot(c, label=i)
         plt.legend()
-        plt.savefig(os.path.join(OUTPUTS_PATH, 'imgs', 'kmeans_{}.png'.format(params_str)))
+        plt.savefig(os.path.join(OUTPUTS_PATH, 'imgs', '{}-centroids_{}.png'.format(alg, params_str)))
         plt.gcf().clear()               # clear figure so for next k
 
+        # Plot medoids if kmedoids
+        if alg == 'kmedoids':
+            for i, m in enumerate(clusterer.medoids):
+                plt.plot(m, label=i)
+            plt.legend()
+            plt.savefig(os.path.join(OUTPUTS_PATH, 'imgs', '{}-medoids_{}.png'.format(alg, params_str)))
+            plt.gcf().clear()
+
         # Ts dists to centroids
-        ts_dists_path = self._get_ts_dists_path(params_str)
+        ts_dists_path = self._get_ts_dists_path(alg, params_str)
         with open(ts_dists_path, 'wb') as f:
             pickle.dump(clusterer.ts_dists, f, protocol=2)
 
@@ -602,17 +633,23 @@ class Analysis(object):
         for centroid_idx, assignments in clusterer.assignments.items():
             self.logger.info('Centroid {}: {} series'.format(centroid_idx, len(assignments)))
 
-    def _save_ts_dists(self, ts_dists, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
-        params_str = self._get_KMEANS_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
-        path = self._get_ts_dists_path(params_str)
+    def _save_ts_dists(self, ts_dists, alg, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
+        params_str = self._get_KCLUST_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
+        path = self._get_ts_dists_path(alg, params_str)
         with open(path, 'wb') as f:
             pickle.dump(ts_dists, f, protocol=2)
 
-    def _save_kmeans_error(self, k2error, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
-        params_str = self._get_KMEANS_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
-        path = self._get_kmeans_error_path(params_str)
+    def _save_kclust_error(self, k2error, alg, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
+        params_str = self._get_KCLUST_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
+        path = self._get_kclust_error_path(alg, params_str)
         with open(path, 'wb') as f:
             pickle.dump(k2error, f, protocol=2)
+
+        # Plot
+        plt.plot(k2error.keys(), k2error.values())
+        plt.savefig(os.path.join(OUTPUTS_PATH, 'imgs', '{}-error_{}.png'.format(alg, params_str)))
+        plt.gcf().clear()
+
 
     def _save_hdbscan(self, clusterer, vids_dirpath, n, w, ds, max_nframes, pred_fn, r, mcs, ms):
         """
@@ -645,27 +682,27 @@ class Analysis(object):
         else:
             return None
 
-    def _load_centroids(self, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
+    def _load_centroids(self, alg, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
         """
         Load centroids from k means clustering
         """
-        clusters_str = self._get_KMEANS_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
-        centroids_path = self._get_centroids_path(clusters_str)
+        clusters_str = self._get_KCLUST_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
+        centroids_path = self._get_centroids_path(alg, clusters_str)
         centroids = pickle.load(open(centroids_path, 'rb'))
         return centroids
 
-    def _load_assignments(self, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
+    def _load_assignments(self, alg, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
         """
         Load assignments from k means clustering
         """
-        clusters_str = self._get_KMEANS_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
-        assignments_path = self._get_assignments_path(clusters_str)
+        clusters_str = self._get_KCLUST_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
+        assignments_path = self._get_assignments_path(alg, clusters_str)
         assignments = pickle.load(open(assignments_path, 'rb'))
         return assignments
 
-    def _load_ts_dists(self, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
-        params_str = self._get_KMEANS_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
-        path = self._get_ts_dists_path(params_str)
+    def _load_ts_dists(self, alg, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
+        params_str = self._get_KCLUST_STR_formatted(vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r)
+        path = self._get_ts_dists_path(alg, params_str)
         ts_dists = pickle.load(open(path, 'rb'))
         return ts_dists
 
@@ -682,8 +719,8 @@ class Analysis(object):
             pred_fn[:-4])      # remove .csv
         return str
 
-    def _get_KMEANS_STR_formatted(self, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
-        str = KMEANS_STR.format(
+    def _get_KCLUST_STR_formatted(self, vids_dirpath, n, w, ds, max_nframes, pred_fn, k, it, r):
+        str = KCLUST_STR.format(
             os.path.basename(vids_dirpath), n, w,
             ds, max_nframes, pred_fn[:-4],
             k, it, r)      # remove .csv
@@ -724,20 +761,20 @@ class Analysis(object):
         path = os.path.join(OUTPUTS_PATH, 'data', 'ts-idx2title_{}.pkl'.format(params_str))
         return path
 
-    def _get_centroids_path(self, params_str):
-        path = os.path.join(OUTPUTS_PATH, 'data', 'centroids_{}.pkl'.format(params_str))
+    def _get_centroids_path(self, alg, params_str):
+        path = os.path.join(OUTPUTS_PATH, 'data', '{}-centroids_{}.pkl'.format(alg, params_str))
         return path
 
-    def _get_assignments_path(self, params_str):
-        path = os.path.join(OUTPUTS_PATH, 'data', 'assignments_{}.pkl'.format(params_str))
+    def _get_assignments_path(self, alg, params_str):
+        path = os.path.join(OUTPUTS_PATH, 'data', '{}-assignments_{}.pkl'.format(alg, params_str))
         return path
 
-    def _get_ts_dists_path(self, params_str):
-        path = os.path.join(OUTPUTS_PATH, 'data', 'ts-dists_{}.pkl'.format(params_str))
+    def _get_ts_dists_path(self, alg, params_str):
+        path = os.path.join(OUTPUTS_PATH, 'data', '{}-ts-dists_{}.pkl'.format(alg, params_str))
         return path
 
-    def _get_kmeans_error_path(self, params_str):
-        path = os.path.join(OUTPUTS_PATH, 'data', 'kmeans-error_{}.pkl'.format(params_str))
+    def _get_kclust_error_path(self, alg, params_str):
+        path = os.path.join(OUTPUTS_PATH, 'data', '{}-error_{}.pkl'.format(alg, params_str))
         return path
 
     def _get_dtw_dist_matrix_path(self, params_str):
@@ -764,9 +801,9 @@ if __name__ == '__main__':
     # Action to take
     parser.add_argument('--prepare_ts', dest='prepare_ts', action='store_true', default=False)
     parser.add_argument('--cluster_ts', dest='cluster_ts', action='store_true', default=False)
-    parser.add_argument('-m', '--method', dest='method', default=None, help='kmeans,hierarchical,hdbscan')
-    parser.add_argument('--compute_kmeans_error', dest='compute_kmeans_error', action='store_true', default=False)
-    parser.add_argument('--compute_kmeans_clusters_ts_dists', dest='compute_kmeans_clusters_ts_dists', action='store_true', default=False)
+    parser.add_argument('-m', '--method', dest='method', default=None, help='kmeans,kmedoids,hierarchical,hdbscan')
+    parser.add_argument('--compute_kclust_error', dest='compute_kclust_error', action='store_true', default=False)
+    parser.add_argument('--compute_kclust_clusters_ts_dists', dest='compute_kclust_clusters_ts_dists', action='store_true', default=False)
     parser.add_argument('--analyze_group_coherence', dest='analyze_group_coherence', action='store_true', default=False)
 
     # Time serise data parameters
@@ -800,12 +837,12 @@ if __name__ == '__main__':
         ts = analysis._load_ts(cmdline.vids_dirpath, cmdline.n, cmdline.w,
                               cmdline.ds, cmdline.max_nframes, cmdline.pred_fn)
         analysis.cluster_ts(ts, cmdline.method, cmdline.r, cmdline.k, cmdline.it, cmdline.mcs, cmdline.ms)
-    elif cmdline.compute_kmeans_error:
-        analysis.compute_kmeans_error(cmdline.vids_dirpath, cmdline.n, cmdline.w,
+    elif cmdline.compute_kclust_error:
+        analysis.compute_kclust_error(cmdline.method, cmdline.vids_dirpath, cmdline.n, cmdline.w,
                                       cmdline.ds, cmdline.max_nframes, cmdline.pred_fn,
                                       cmdline.k, cmdline.it, cmdline.r)
-    elif cmdline.compute_kmeans_clusters_ts_dists:
-        analysis.compute_kmeans_clusters_ts_dists(cmdline.vids_dirpath, cmdline.n,
+    elif cmdline.compute_kclust_clusters_ts_dists:
+        analysis.compute_kclust_clusters_ts_dists(cmdline.method, cmdline.vids_dirpath, cmdline.n,
                                                            cmdline.w, cmdline.ds,
                                                            cmdline.max_nframes, cmdline.pred_fn,
                                                            cmdline.k, cmdline.it, cmdline.r)
