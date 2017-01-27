@@ -12,8 +12,8 @@
 
 <body>
     <div id="plot"></div>
-    <div width="800" height="400">
-        <div style="max-width:800px; max-height:400px">
+    <div width="800" height="600">
+        <div style="max-width:800px; max-height:600px">
             <canvas id="chart" width="100%"></canvas>
         </div>
     </div>
@@ -277,6 +277,15 @@
             var win = window.open(url, '_blank');
             // win.focus();
         }
+        // Remove initial frames for clusters view. The low initial values (due to opening credits) increases the range,
+        // making the cluster look very flat when focusOnKth
+        function removeStartEndNvals(timeseries, nstart, nend) {
+            var initial_removed = [];
+            for (var i = nstart; i < timeseries.length - nend; i+= 1) {
+                initial_removed.push(timeseries[i]);
+            }
+            return initial_removed;
+        }
 
         /***************************************************************************************************************
         * Draw chart for one image view - show images on hover
@@ -409,12 +418,14 @@
                 [73, 0, 106],     // dark violet
                 [0, 109, 44]      // dark green
             ];
-            var DOWNSAMPLE_RATE = datgui.clusters.format == 'films' ? 15 : 3;
+            var DOWNSAMPLE_RATE = datgui.clusters.format == 'films' ? 45 : 10;
+            var REMOVE_NSTART = datgui.clusters.format == 'films' ? 180 : 60;
+            var REMOVE_NEND = datgui.clusters.format == 'films' ? 180 : 60;
 
             // Get dataset
             // Each object in dataset array corresponds to one line
             var dataset = [];
-            var curClusters = data.clusters[datgui.clusters.format][datgui.clusters.k];   // film -> films
+            var curClusters = data.clusters[datgui.clusters.format][datgui.clusters.k];
             for (var i = 0; i < curClusters.centroids.length; i++) {
                 // Skip if focusOnKth but not focusing on this centroid
                 if (datgui.clusters.focusOnKth != 'all') {
@@ -426,7 +437,11 @@
                 var rgb = COLORS[i];
                 dataset.push({
                     label: i,
-                    data: downsampleTimeseries(curClusters.centroids[i], DOWNSAMPLE_RATE),
+                    data: downsampleTimeseries(
+                            removeStartEndNvals(
+                                    curClusters.centroids[i],
+                                    REMOVE_NSTART, REMOVE_NEND),
+                            DOWNSAMPLE_RATE),
                     borderWidth: 2,
                     borderColor: getRGBA(rgb[0], rgb[1], rgb[2], 0.75),
                     backgroundColor: getRGBA(rgb[0], rgb[1], rgb[2], 0.05),
@@ -452,7 +467,11 @@
                     var rgba = getRGBA(rgb.r, rgb.g, rgb.b, 0.2);
                     dataset.push({
                         label: title,
-                        data: downsampleTimeseries(series, DOWNSAMPLE_RATE),
+                        data: downsampleTimeseries(
+                                removeStartEndNvals(
+                                        series,
+                                        REMOVE_NSTART, REMOVE_NEND),
+                                DOWNSAMPLE_RATE),
                         borderWidth: 1,
                         borderColor: rgba,
                         backgroundColor: rgba,

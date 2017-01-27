@@ -7,6 +7,7 @@
 from flask import Flask, Response, request, render_template
 import json
 from natsort import natsorted
+import numpy as np
 import os
 import pandas as pd
 import pickle
@@ -19,32 +20,61 @@ from core.utils.utils import get_credits_idx
 FORMATS = ['films', 'shorts', 'ads']
 
 VIDEOS_PATH = 'shape/static/videos/'
-OUTPUTS_DATA_PATH = 'shape/outputs/cluster/data/old1/'
+OUTPUTS_DATA_PATH = 'shape/outputs/cluster/data/'
+# OUTPUTS_DATA_PATH = 'shape/outputs/cluster/data/old1/'
 
 # For One Video view - (if else for local vs shannon)
 PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
 
 # For Clusters view:
 TS_FN = \
-    {'films': 'ts_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
-     'shorts': 'ts_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+    {'films': 'ts_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
+     'shorts': 'ts_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
      'ads': None}
 TS_IDX2TITLE_FN = \
-    {'films': 'ts_idx2title_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
-     'shorts': 'ts_idx2title_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+    {'films': 'ts-idx2title_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
+     'shorts': 'ts-idx2title_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
+     'ads': None}
+TS_MEAN_FN = \
+    {'films': 'ts-mean_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
+     'shorts': 'ts-mean_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
+     'ads': None}
+TS_STD_FN = \
+    {'films': 'ts-std_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
+     'shorts': 'ts-std_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
      'ads': None}
 CENTROIDS_FN = \
-    {'films': 'centroids_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
-     'shorts': 'centroids_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+    {'films': 'centroids_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
+     'shorts': 'centroids_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it15-r45.pkl',
      'ads': None}
 ASSIGNMENTS_FN = \
-    {'films': 'assignments_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
-     'shorts': 'assignments_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+    {'films': 'assignments_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
+     'shorts': 'assignments_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it15-r45.pkl',
      'ads': None}
 TS_DISTS_FN = \
-    {'films': 'ts_dists_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
-     'shorts': 'ts_dists_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+    {'films': 'ts-dists_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
+     'shorts': 'ts-dists_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it5-r45.pkl',
      'ads': None}
+# TS_FN = \
+#     {'films': 'ts_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
+#      'shorts': 'ts_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+#      'ads': None}
+# TS_IDX2TITLE_FN = \
+#     {'films': 'ts_idx2title_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
+#      'shorts': 'ts_idx2title_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+#      'ads': None}
+# CENTROIDS_FN = \
+#     {'films': 'centroids_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
+#      'shorts': 'centroids_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+#      'ads': None}
+# ASSIGNMENTS_FN = \
+#     {'films': 'assignments_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
+#      'shorts': 'assignments_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+#      'ads': None}
+# TS_DISTS_FN = \
+#     {'films': 'ts_dists_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
+#      'shorts': 'ts_dists_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
+#      'ads': None}
 
 ###### GLOBALS
 title2vidpath = {}
@@ -153,10 +183,26 @@ def setup_initial_data():
     # NOTE: all the time series are of the same length -- this is the saved interpolated time series used during
     # clustering. These are used to display the closest movies in the clusters view
 
+    fmt2mean, fmt2std = {}, {}
     for fmt in ['films', 'shorts']:#FORMATS:
         try:
+            # Load mean and std to unnormalize time series
+            mean_fn = TS_MEAN_FN[fmt]
+            std_fn = TS_STD_FN[fmt]
+            mean_path = os.path.join(OUTPUTS_DATA_PATH, mean_fn)
+            std_path = os.path.join(OUTPUTS_DATA_PATH, std_fn)
+            with open(mean_path) as f:
+                mean = pickle.load(f)
+                mean = mean.mean()
+                fmt2mean[fmt] = mean
+            with open(std_path) as f:
+                std = pickle.load(f)
+                std = std.mean()
+                fmt2std[fmt] = std
+
             # Clusters view
             ts[fmt] = pickle.load(open(os.path.join(OUTPUTS_DATA_PATH, TS_FN[fmt]), 'rb'))
+            ts[fmt] = [ts[fmt][i] * fmt2std[fmt] + fmt2mean[fmt] for i in range(len(ts[fmt]))]   # unnormalize
             ts[fmt] = [list(arr) for arr in ts[fmt]]        # make it serializable
             ts_idx2title[fmt] = pickle.load(open(os.path.join(OUTPUTS_DATA_PATH, TS_IDX2TITLE_FN[fmt]), 'rb'))
 
@@ -166,12 +212,12 @@ def setup_initial_data():
             for ts_idx, title in ts_idx2title[fmt].items():
                 if title in title2vidpath:
                     vid_framespath = os.path.join(title2vidpath[title], 'frames')
-                    title2pred_len[format][title] = len(os.listdir(vid_framespath))
+                    title2pred_len[fmt][title] = len(os.listdir(vid_framespath))
         except Exception as e:
             print fmt, e
 
     global clusters
-    ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    ks = [2, 3, 4, 5, 6, 7, 8, 9, 10]
     for fmt in FORMATS:
         clusters[fmt] = {}
         for k in ks:
@@ -183,11 +229,12 @@ def setup_initial_data():
                 centroids_path = os.path.join(OUTPUTS_DATA_PATH, centroids_fn)
                 assignments_path = os.path.join(OUTPUTS_DATA_PATH, assignments_fn)
                 ts_dists_path = os.path.join(OUTPUTS_DATA_PATH, ts_dists_fn)
-                if os.path.exists(centroids_path) and os.path.exists(assignments_path) and os.path.exists(ts_dists_path):
+                if os.path.exists(centroids_path) and \
+                        os.path.exists(assignments_path) and os.path.exists(ts_dists_path):
                     clusters[fmt][k] = {}
-                    with open(centroids_path) as f:
+                    with open(centroids_path, 'rb') as f:
                         clusters[fmt][k]['centroids'] = pickle.load(f)
-                    with open(assignments_path) as f:
+                    with open(assignments_path, 'rb') as f:
                         clusters[fmt][k]['assignments'] = pickle.load(f)
 
                     # TS Distances to centroids

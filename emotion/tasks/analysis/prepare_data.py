@@ -26,6 +26,7 @@ CMU_PATH = 'data/CMU_movie_summary/MovieSummaries/'
 VID_EXTS = ['webm', 'mkv', 'flv', 'vob', 'ogv', 'ogg', 'drc', 'gif', 'gifv', 'mng', 'avi', 'mov', 'qt', 'wmv',
                 'yuv', 'rm', 'rmvb', 'asf', 'amv', 'mp4', 'm4p', 'm4v', 'mpg', 'mp2', 'mpeg', 'mpe', 'mpv', 'm2v',
                 'm4v', 'svi', '3gp', '3g2', 'mxf', 'roq', 'nsv', 'flv', 'f4v', 'f4p', 'f4a', 'f4b']
+VID_EXTS += [fmt.upper() for fmt in VID_EXTS]
 VIDEOPATH_DB = 'data/db/VideoPath.db'
 VIDEOMETADATA_DB = 'data/db/VideoMetadata.pkl'
 
@@ -56,6 +57,7 @@ def save_video_frames(vids_dir):
     mr = MovieReader()
 
     vids_path = os.path.join(VIDEOS_PATH, vids_dir)
+    print vids_path
     ext2count = defaultdict(int)
     i = 0
     successes = []
@@ -358,7 +360,12 @@ def match_film_metadata():
         'Bruno': 'Br\xc3\xbcno',
         'The Guilt Trip': None,
         'The Adventures of Tintin': None,
-
+        'Coherence': None,
+        'Finding Dory': None,
+        'Kubo And The Two Strings': None,
+        'The Secret Life of Pets': None,
+        'The Boxtrolls': None,
+        'The Good Dinosaur': None
     }
 
     result = {}
@@ -368,22 +375,23 @@ def match_film_metadata():
         cur = conn.cursor()
         rows = cur.execute("SELECT title FROM VideoPath WHERE category=='films'")
         for row in rows:
-            title = row[0]
-            title = title.encode('utf-8')
-            m = re.match(r'(.+) \(\d+\)?$', title)
+            orig_title = row[0]     # i.e. includes year, e.g. Serenity (2003)
+            orig_title = orig_title.encode('utf-8')
+            m = re.match(r'(.+) \(\d+\)?$', orig_title)
             title = m.group(1)
 
             if title in manually_matched:
                 print title, 'TITLE IN MANUALLY MATCHED'
                 match = manually_matched[title]
                 if match:
-                    result[title] = movie2metadata[match]
+                    result[orig_title] = movie2metadata[match]
                     continue
             else:
                 matched = sorted([(fuzz.ratio(title, movie_name), movie_name) for movie_name in movies])
                 matched = [t for s, t in matched[::-1][:10]]        # top 10
+                print title, matched
                 match = matched[0]
-                result[title] = movie2metadata[match]
+                result[orig_title] = movie2metadata[match]
 
                 # print title, matched
     return result
