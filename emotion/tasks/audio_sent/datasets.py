@@ -5,9 +5,9 @@ import cPickle as pickle
 import json
 import numpy as np
 import os
-from prepare_data import MELGRAM_30S_SIZE
 import tensorflow as tf
 
+from prepare_data import MELGRAM_30S_SIZE
 
 TFRECORDS_PATH = 'data/spotify/tfrecords'
 NUMPTS_AND_MEANSTD_PATH = 'data/spotify/numpts_and_meanstd.pkl'

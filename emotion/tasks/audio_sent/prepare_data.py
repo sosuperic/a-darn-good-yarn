@@ -15,8 +15,11 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import sqlite3
 import string
+import subprocess
 import tensorflow as tf
 import urllib
+
+from core.utils.utils import VID_EXTS
 
 MSD_FILES_PATH = 'data/msd/full/AdditionalFiles/'
 MSD_TRACKS_DB = 'data/msd/full/AdditionalFiles/track_metadata.db'
@@ -711,6 +714,54 @@ def precompute_numpts_and_meanstd_from_tfrecords():
 
     print numpts_and_meanstd['num_pts']
 
+########################################################################################################################
+# Extract audio for videos in order to predict audio-based emotional curves
+########################################################################################################################
+def extract_audio_from_vids(vids_dirpath):
+    """
+    Save mp3's of audio for every video in vids_dirpath
+    """
+    errors_f = open('notes/audio_extraction_errors.txt', 'wb')
+    for root, dirs, files in os.walk(vids_dirpath):
+        # See if audio exists already, skip if it does
+
+        # Find movie fn
+        movie_fn = None
+        for f in files:
+            for ext in VID_EXTS:
+                if f.endswith(ext):
+                    movie_fn = f
+                    break
+
+        if movie_fn:
+            try:
+                movie_fp = os.path.join(root, movie_fn)
+                out_fn = movie_fn.split('.')
+                out_fn = '.'.join(out_fn[0:len(out_fn)-1]) + '.mp3'
+                out_fp = os.path.join(root, out_fn)
+
+                # Skip if audio file already exists
+                if os.path.exists(out_fp):
+                    print 'Audio already exists for: {}, skipping'.format(out_fp)
+                    continue
+
+                print '=' * 100
+                print '=' * 100
+                print '=' * 100
+                print 'Extracting audio for: {}'.format(movie_fp)
+                print 'Saving to: {}'.format(out_fp)
+                # NOTE: 12000 sample rate because that's what used for tfrecord melgram features
+                # Note: Not using split() on bash command string because path's may have spaces
+                cmd = ['ffmpeg', '-i'] + [movie_fp] + ['-ar', '12000', '-q:a', '0', '-map', 'a'] + [out_fp]
+                subprocess.call(cmd, stdout=subprocess.PIPE)
+                print 'Done extracting'
+                
+            except Exception as e:
+                print movie_fn, e
+                errors_f.write(u'{},{}\n'.format(unicode(movie_fn, 'utf-8'), unicode(e, 'utf-8')))
+
+    errors_f.close()
+
 if __name__ == '__main__':
 
     # Set up commmand line arguments
@@ -727,6 +778,9 @@ if __name__ == '__main__':
     parser.add_argument('--write_spotify_to_tfrecords', dest='write_spotify_to_tfrecords', action='store_true')
     parser.add_argument('--precompute_numpts_and_meanstd_from_tfrecords', dest='precompute_numpts_and_meanstd_from_tfrecords',
                         action='store_true')
+
+    parser.add_argument('--extract_audio_from_vids', dest='extract_audio_from_vids', action='store_true')
+    parser.add_argument('--vids_dirpath', dest='vids_dirpath', default=None, help='e.g. data/videos/films')
 
     cmdline = parser.parse_args()
 
@@ -752,3 +806,5 @@ if __name__ == '__main__':
         write_spotify_to_tfrecords()
     elif cmdline.precompute_numpts_and_meanstd_from_tfrecords:
         precompute_numpts_and_meanstd_from_tfrecords()
+    elif cmdline.extract_audio_from_vids:
+        extract_audio_from_vids(cmdline.vids_dirpath)

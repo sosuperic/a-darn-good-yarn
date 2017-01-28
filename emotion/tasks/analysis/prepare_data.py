@@ -12,9 +12,9 @@ import re
 import sqlite3
 import subprocess
 
-from core.utils.MovieReader import MovieReader
 from core.utils.CreditsLocator import CreditsLocator
-
+from core.utils.MovieReader import MovieReader
+from core.utils.utils import VID_EXTS
 
 # Videos path
 VIDEOS_PATH = 'data/videos'
@@ -23,10 +23,6 @@ VIDEOS_PATH = 'data/videos'
 CMU_PATH = 'data/CMU_movie_summary/MovieSummaries/'
 
 # Videos
-VID_EXTS = ['webm', 'mkv', 'flv', 'vob', 'ogv', 'ogg', 'drc', 'gif', 'gifv', 'mng', 'avi', 'mov', 'qt', 'wmv',
-                'yuv', 'rm', 'rmvb', 'asf', 'amv', 'mp4', 'm4p', 'm4v', 'mpg', 'mp2', 'mpeg', 'mpe', 'mpv', 'm2v',
-                'm4v', 'svi', '3gp', '3g2', 'mxf', 'roq', 'nsv', 'flv', 'f4v', 'f4p', 'f4a', 'f4b']
-VID_EXTS += [fmt.upper() for fmt in VID_EXTS]
 VIDEOPATH_DB = 'data/db/VideoPath.db'
 VIDEOMETADATA_DB = 'data/db/VideoMetadata.pkl'
 
