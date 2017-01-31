@@ -70,7 +70,7 @@ class Network(object):
                     if j % 10 == 0:
                         tr_summary_writer.add_summary(summary, i * num_tr_batches + j)
 
-                    # if j == 10:
+                    # if j == 5:
                     #     break
 
                     # Save (potentially) before end of epoch just so I don't have to wait
@@ -82,7 +82,7 @@ class Network(object):
                     num_va_batches = self.dataset.get_num_batches('valid')
                     for j in range(num_va_batches):
                         clip_batch, label_batch = sess.run([va_clip_batch, va_label_batch])
-                        loss_val, loss_summary, acc_summary = sess.run(
+                        loss_val, loss_summary = sess.run(
                             [self.loss, self.loss_summary],
                             feed_dict={'clip_batch:0': clip_batch, 'label_batch:0': label_batch})
 
@@ -91,7 +91,6 @@ class Network(object):
                         # Write summary
                         if j % 10 == 0:
                             va_summary_writer.add_summary(loss_summary, i * num_tr_batches + j)
-                            va_summary_writer.add_summary(acc_summary, i * num_tr_batches + j)
 
                 # Save model at end of epoch (potentially)
                 save_model(sess, saver, self.params, i, self.logger)

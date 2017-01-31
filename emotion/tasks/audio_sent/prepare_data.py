@@ -599,16 +599,22 @@ def write_spotify_to_tfrecords(split=[0.8, 0.1, 0.1]):
                     track_id = os.path.basename(fp).split('.')[0]
                     tfrecord_ex_id = fp.split('/')[3] + fp.split('/')[4] + fp.split('/')[5] + '-' + track_id
                     log_melgram = compute_log_melgram(fp)
+                    log_melgram = log_melgram.astype(np.float32, copy=False)        # float64 -> float32
                     log_melgram_raw = log_melgram.tostring()
-                    valence_reg_label = af[track_id]['valence']
-                    print i, tfrecord_ex_id, valence_reg_label
+                    print i, tfrecord_ex_id
 
                     # print np.fromstring(log_melgram_raw).shape
 
                     example = tf.train.Example(features=tf.train.Features(feature={
                         'id': _bytes_feature(tfrecord_ex_id),
                         'log_melgram': _bytes_feature(log_melgram_raw),
-                        'valence_reg': _float_feature(valence_reg_label),
+                        'valence_reg': _float_feature(af[track_id]['valence']),
+                        'energy_reg': _float_feature(af[track_id]['energy']),
+                        'tempo_reg': _float_feature(af[track_id]['tempo']),
+                        'speechiness_reg': _float_feature(af[track_id]['speechiness']),
+                        'danceability_reg': _float_feature(af[track_id]['danceability']),
+                        'key_reg': _float_feature(af[track_id]['key']),
+                        'loudness_reg': _float_feature(af[track_id]['loudness'])
                     }))
 
                     # Figure out which writer to use (train, valid, test)
@@ -681,18 +687,20 @@ def precompute_numpts_and_meanstd_from_tfrecords():
         std = np.zeros(MELGRAM_30S_SIZE[0])         # (num mel-bins, )
         dirpath = os.path.join(SPOTIFY_PATH, 'tfrecords', split)
         for tfrecord in os.listdir(dirpath):
-            if tfrecord.startswith('HP'):          # Used to test while still saving tfrecords
-                continue
+            # if tfrecord.startswith('HP'):          # Used to test while still saving tfrecords
+            #     continue
 
             tfrecord_path = os.path.join(dirpath, tfrecord)
             for record in tf.python_io.tf_record_iterator(tfrecord_path):
                 n += 1
                 if split == 'train':                # only calculate mean and std on train set
+                    # print n, tfrecord
                     example = tf.train.Example()
                     example.ParseFromString(record)
 
                     log_melgram_str = (example.features.feature['log_melgram'].bytes_list.value[0])
-                    log_melgram = np.fromstring(log_melgram_str)
+                    log_melgram = np.fromstring(log_melgram_str, dtype=np.float32)
+                    # print log_melgram.shape[0] / 96
                     log_melgram = log_melgram.reshape(MELGRAM_30S_SIZE)
 
                     # Update moving average of mean and std
@@ -713,6 +721,74 @@ def precompute_numpts_and_meanstd_from_tfrecords():
         pickle.dump(numpts_and_meanstd, f, protocol=2)
 
     print numpts_and_meanstd['num_pts']
+
+def modify_tfrecords():
+    """
+    Load and modify -- (a) turn melgrams from float64 to float32, (b) add more labels -- existing tfrecords.
+    Used because initial run creating tfrecords used float64 and only saved valence_reg. Modifying instead of
+    re-creating tfrecords because creating tfrecords is slow due to loading each mp3 file and calculating
+    melgram.
+    """
+    def _bytes_feature(value):
+        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+    def _float_feature(value):
+        return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+
+    def check_features_not_none(track_af, feature_names):
+        for feat in feature_names:
+            if (feat not in track_af) or (track_af[feat] is None):
+                return False
+        return True
+
+    # Load audio features
+    print 'Loading audio features'
+    af = pickle.load(open(SPOTIFY_AUDIO_FEATURES, 'rb'))
+
+    for split in ['train', 'valid', 'test']:
+        dirpath = os.path.join(SPOTIFY_PATH, 'tfrecords', split)
+        for tfrecord in os.listdir(dirpath):
+            print '{} -- {}'.format(split, tfrecord)
+            tfrecord_path = os.path.join(dirpath, tfrecord)
+
+            writer = tf.python_io.TFRecordWriter(tfrecord_path + '.modified')
+            for record in tf.python_io.tf_record_iterator(tfrecord_path):
+                example = tf.train.Example()
+                example.ParseFromString(record)
+
+                # Get log melgram and convert to float32
+                log_melgram_str = (example.features.feature['log_melgram'].bytes_list.value[0])
+                log_melgram = np.fromstring(log_melgram_str)
+                log_melgram = log_melgram.astype(np.float32, copy=False)
+                log_melgram_str = log_melgram.tostring()
+
+                # print log_melgram.shape[0] / 96
+
+                # Get id to get more audio features
+                track_id = example.features.feature['id'].bytes_list.value[0].split('-')[1]
+                cur_af = af[track_id]
+                valid = check_features_not_none(cur_af, ['energy', 'tempo', 'speechiness', 'danceability', 'key', 'loudness'])
+                if not valid:
+                    print '{} missing features, skipping'.format(track_id)
+                    continue
+
+                modified = tf.train.Example(features=tf.train.Features(feature={
+                    'id': _bytes_feature(example.features.feature['id'].bytes_list.value[0]),
+                    'log_melgram': _bytes_feature(log_melgram_str),
+                    'valence_reg': _float_feature(example.features.feature['valence_reg'].float_list.value[0]),
+                    'energy_reg': _float_feature(cur_af['energy']),
+                    'tempo_reg': _float_feature(cur_af['tempo']),
+                    'speechiness_reg': _float_feature(cur_af['speechiness']),
+                    'danceability_reg': _float_feature(cur_af['danceability']),
+                    'key_reg': _float_feature(cur_af['key']),
+                    'loudness_reg': _float_feature(cur_af['loudness']),
+                }))
+
+                writer.write(modified.SerializeToString())
+
+            # Replace old with modified
+            os.system('rm {}'.format(tfrecord_path))
+            os.system('mv {} {}'.format(tfrecord_path + '.modified', tfrecord_path))
 
 ########################################################################################################################
 # Extract audio for videos in order to predict audio-based emotional curves
@@ -755,7 +831,7 @@ def extract_audio_from_vids(vids_dirpath):
                 cmd = ['ffmpeg', '-i'] + [movie_fp] + ['-ar', '12000', '-q:a', '0', '-map', 'a'] + [out_fp]
                 subprocess.call(cmd, stdout=subprocess.PIPE)
                 print 'Done extracting'
-                
+
             except Exception as e:
                 print movie_fn, e
                 errors_f.write(u'{},{}\n'.format(unicode(movie_fn, 'utf-8'), unicode(e, 'utf-8')))
@@ -776,6 +852,7 @@ if __name__ == '__main__':
     parser.add_argument('--dl_previews_from_spotify', dest='dl_previews_from_spotify', action='store_true')
     parser.add_argument('--clean_dld_previews', dest='clean_dld_previews', action='store_true')
     parser.add_argument('--write_spotify_to_tfrecords', dest='write_spotify_to_tfrecords', action='store_true')
+    parser.add_argument('--modify_tfrecords', dest='modify_tfrecords', action='store_true')
     parser.add_argument('--precompute_numpts_and_meanstd_from_tfrecords', dest='precompute_numpts_and_meanstd_from_tfrecords',
                         action='store_true')
 
@@ -806,5 +883,7 @@ if __name__ == '__main__':
         write_spotify_to_tfrecords()
     elif cmdline.precompute_numpts_and_meanstd_from_tfrecords:
         precompute_numpts_and_meanstd_from_tfrecords()
+    elif cmdline.modify_tfrecords:
+        modify_tfrecords()
     elif cmdline.extract_audio_from_vids:
         extract_audio_from_vids(cmdline.vids_dirpath)

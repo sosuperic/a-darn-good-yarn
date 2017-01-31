@@ -175,7 +175,7 @@ class Analysis(object):
             dist_matrix = self._try_load_dtw_dist_matrix(self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn, r)
             for k in k.split(','):
                 print '=' * 100
-                self.cluster_ts_kmedoids(data, dist_matrix, int(k), it)
+                self.cluster_ts_kmedoids(data, dist_matrix, r, int(k), it)
         elif method == 'hierarchical':
             self.cluster_ts_hierarchical(data)
         elif method == 'hdbscan':
@@ -213,7 +213,7 @@ class Analysis(object):
         self.logger.info('Saving centroids, assignments, figure')
         self._save_kclust(clusterer, 'kmeans', self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn, k, it, r)
 
-    def cluster_ts_kmedoids(self, data, dist_matrix, k, it):
+    def cluster_ts_kmedoids(self, data, dist_matrix, r, k, it):
         # Cluster
         self.logger.info('K-means clustering: k={}, it={}'.format(k, it))
         clusterer = ts_cluster(num_clust=k)
@@ -236,7 +236,7 @@ class Analysis(object):
 
         # Save outputs
         self.logger.info('Saving centroids, assignments, figure')
-        self._save_kclust(clusterer, 'kmedoids', self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn, k, it, None)
+        self._save_kclust(clusterer, 'kmedoids', self.vids_dirpath, self.n, self.w, self.ds, self.max_nframes, self.pred_fn, k, it, r)
 
     def cluster_ts_hierarchical(self, data):
         """
@@ -837,6 +837,9 @@ if __name__ == '__main__':
 
 
     cmdline = parser.parse_args()
+
+    if cmdline.w >= 1:
+        cmdline.w = int(cmdline.w)
 
     analysis = Analysis()
     if cmdline.prepare_ts:

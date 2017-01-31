@@ -141,7 +141,8 @@ class SpotifyDataset(Dataset):
                 'valence_reg': tf.FixedLenFeature([], tf.float32)
             })
 
-        feats = tf.decode_raw(features['log_melgram'], tf.float64)
+        # feats = tf.decode_raw(features['log_melgram'], tf.float64)
+        feats = tf.decode_raw(features['log_melgram'], tf.float32)
         feats = tf.cast(feats, tf.float32)
         # feats = tf.decode_raw(features['log_melgram'], tf.uint8)
         feats = tf.reshape(feats, MELGRAM_30S_SIZE)

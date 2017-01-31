@@ -27,28 +27,28 @@ PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') e
 
 # For Clusters view:
 TS_FN = \
-    {'films': 'ts_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
-     'shorts': 'ts_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
+    {'films': 'ts_dirfilms-n510-w1000-ds1-maxnf10000-fnsent_biclass_19.pkl',
+     'shorts': 'ts_dirshorts-n1326-w0.14-ds1-maxnf1800-fnsent_biclass_19.pkl',
      'ads': None}
 TS_IDX2TITLE_FN = \
-    {'films': 'ts-idx2title_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
-     'shorts': 'ts-idx2title_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
+    {'films': 'ts-idx2title_dirfilms-n510-w1000-ds1-maxnf10000-fnsent_biclass_19.pkl',
+     'shorts': 'ts-idx2title_dirshorts-n1326-w0.14-ds1-maxnf1800-fnsent_biclass_19.pkl',
      'ads': None}
 TS_MEAN_FN = \
-    {'films': 'ts-mean_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
-     'shorts': 'ts-mean_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
+    {'films': 'ts-mean_dirfilms-n510-w1000-ds1-maxnf10000-fnsent_biclass_19.pkl',
+     'shorts': 'ts-mean_dirshorts-n1326-w0.14-ds1-maxnf1800-fnsent_biclass_19.pkl',
      'ads': None}
 TS_STD_FN = \
-    {'films': 'ts-std_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
-     'shorts': 'ts-std_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
+    {'films': 'ts-std_dirfilms-n510-w1000-ds1-maxnf10000-fnsent_biclass_19.pkl',
+     'shorts': 'ts-std_dirshorts-n1326-w0.14-ds1-maxnf1800-fnsent_biclass_19.pkl',
      'ads': None}
 CENTROIDS_FN = \
-    {'films': 'kmedoids-centroids_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it100-rNone.pkl',
-     'shorts': 'kmedoids-centroids_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it100-rNone.pkl',
+    {'films': 'kmedoids-centroids_dirfilms-n510-w1000-ds1-maxnf10000-fnsent_biclass_19-k{}-it100-r250.pkl',
+     'shorts': 'kmedoids-centroids_dirshorts-n1326-w0.14-ds1-maxnf1800-fnsent_biclass_19-k{}-it100-r45.pkl',
      'ads': None}
 TS_DISTS_FN = \
-    {'films': 'kmedoids-ts-dists_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it100-rNone.pkl',
-     'shorts': 'kmedoids-ts-dists_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it100-rNone.pkl',
+    {'films': 'kmedoids-ts-dists_dirfilms-n510-w1000-ds1-maxnf10000-fnsent_biclass_19-k{}-it100-r250.pkl',
+     'shorts': 'kmedoids-ts-dists_dirshorts-n1326-w0.14-ds1-maxnf1800-fnsent_biclass_19-k{}-it100-r45.pkl',
      'ads': None}
 
 # TS_FN = \
