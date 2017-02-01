@@ -30,13 +30,12 @@ if __name__ == '__main__':
     # General training params
     parser.add_argument('-bs', '--batch_size', dest='batch_size', type=int, default=None, help='batch size')
     parser.add_argument('-e', '--epochs', dest='epochs', type=int, default=None, help='max number of epochs')
-    parser.add_argument('--dropout', dest='dropout', type=float, default=None,
-                        help='use 1.0 when testing -- tensorflow uses keep_prob')
 
     # Job specific training params
     parser.add_argument('-lr', dest='lr', type=float, default=None, help='learning rate')
     parser.add_argument('--optim', dest='optim', default=None,
                         help='sgd,adadelta,adagrad,adam,rmsprop; optimziation method')
+    parser.add_argument('--bn_decay', dest='bn_decay', type=float)
     parser.add_argument('--momentum', dest='momentum', type=float, default=None, help='momentum')
     parser.add_argument('--weight_decay', dest='weight_decay', type=float, default=None, help='weight decay')
 
@@ -45,6 +44,8 @@ if __name__ == '__main__':
                         help='either (a) path to directory that contains video and frames/ folder, or '\
                              '(b) directory that contains subdirs that have video and frames/ '\
                              'used to with mode=predict')
+    parser.add_argument('--stride', type=int, default=20, dest='stride',
+                        help='number of seconds to stride when making predictions')
 
     # Bookkeeping, checkpointing, etc.
     parser.add_argument('--save_every_epoch', dest='save_every_epoch', type=int, default=None,
@@ -81,14 +82,13 @@ if __name__ == '__main__':
         network.train()
 
     elif params['mode'] == 'test':
-        params['dropout'] = 1.0
         params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
         network = Network(params)
         network.test()
 
     elif params['mode'] == 'predict':
-        params['dropout'] = 1.0
         params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
+        params['batch_size'] = 1
         network = Network(params)
         network.predict()
 

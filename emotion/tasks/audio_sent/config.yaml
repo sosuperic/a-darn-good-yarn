@@ -1,6 +1,6 @@
 batch_size: 16
 epochs: 20
-dropout: 0.5
+bn_decay: 0.9
 save_every_epoch: 1
 val_every_epoch: 1
 
@@ -8,3 +8,4 @@ cnn:
     valence_reg:
         optim: adam
         lr: 0.01
+        ckpt_dir: 2017-01-30___00-56-41

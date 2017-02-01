@@ -89,7 +89,8 @@ class SpotifyDataset(Dataset):
                 files_list['valid'] = self._get_tfrecords_files_list('valid')
                 # files_list['test'] = self._get_tfrecords_files_list('test')
         elif self.params['mode'] == 'test':
-            files_list = self._get_tfrecords_files_list('test')
+            files_list = self._get_tfrecords_files_list('valid')
+            # files_list = self._get_tfrecords_files_list('test')
 
         return files_list
 
@@ -191,17 +192,5 @@ class SpotifyDataset(Dataset):
             clip_batch, label_batch = self.input_pipeline(self.files_list)
             return clip_batch, label_batch
 
-########################################################################################################################
-###
-### PREDICTION DATASET (predicting values on unseen images, i.e. movie frames)
-###
-########################################################################################################################
-class PredictionDataset(Dataset):
-    def __init__(self, params, vid_dirpath):
-        pass
-
-def get_dataset(params, vid_dirpath=None):
-    if params['mode'] == 'predict':
-        return PredictionDataset(params, vid_dirpath)
-    else:
-        return SpotifyDataset(params)
+def get_dataset(params):
+    return SpotifyDataset(params)

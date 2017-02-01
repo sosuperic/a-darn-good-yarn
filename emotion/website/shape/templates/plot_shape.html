@@ -12,12 +12,13 @@
 
 <body>
     <div id="plot"></div>
-    <div width="800" height="600">
-        <div style="max-width:800px; max-height:600px">
+    <div width="800" height="400">
+        <div style="max-width:800px; max-height:400px">
             <canvas id="chart" width="100%"></canvas>
         </div>
     </div>
     <div style="padding-left:275px;padding-top:50px" id="frame"></div>
+    <div style="padding-left:275px;padding-top:50px" id="mp3"></div>
 
     <script type="text/javascript">
         /***************************************************************************************************************
@@ -39,13 +40,16 @@
             oneVideo.format = 'films';
             oneVideo.dynamicRange = true;
             oneVideo.films = {};
-            oneVideo.films.windowSize = 600;
+            oneVideo.films.visualWindow = 600;
+            oneVideo.films.audioWindow = 300;
             oneVideo.films.video = data.format2titles['films'][0];
             oneVideo.shorts = {};
-            oneVideo.shorts.windowSize = 60;
+            oneVideo.shorts.visualWindow = 60;
+            oneVideo.shorts.audioWindow = 30;
             oneVideo.shorts.video = data.format2titles['shorts'][0];
             oneVideo.ads = {};
-            oneVideo.ads.windowSize = 1;
+            oneVideo.ads.visualWindow = 1;
+            oneVideo.ads.audioWindow = 1;
             oneVideo.ads.video = data.format2titles['ads'][0];
             this.oneVideo = oneVideo;
 
@@ -76,8 +80,10 @@
                     addOneVideoGUI();
                     drawOneVideo(datgui);
                     showImage("../static/videos/" + data.framepaths[0], 256, 256, '');
+                    showMp3(data.mp3path);
                 } else if (view == 'Clusters') {
                     removeFrame();
+                    removeMp3();
                     addClustersGUI();
                     drawClusters(datgui);
                 }
@@ -98,13 +104,15 @@
                 // Set ranges, values
                 var guiFormats = gui.add(datgui.oneVideo, 'format', ['films', 'shorts', 'ads']);
                 var guiR = gui.add(datgui.oneVideo, 'dynamicRange');
-                var guiW = gui.add(datgui.oneVideo.films, 'windowSize').min(1).max(1500).step(1);
+                var guiVW = gui.add(datgui.oneVideo.films, 'visualWindow').min(1).max(1500).step(1);
+                var guiAW = gui.add(datgui.oneVideo.films, 'audioWindow').min(1).max(1500).step(1);
                 var guiV = gui.add(datgui.oneVideo.films, 'video', data.format2titles['films']);
 
                 // Dat Gui Handlers
                 guiFormats.onFinishChange(function(format) {
                     // Remove list of videos controller; add titles for that format; swap order of controllers to get back in place
-                    gui.__controllers[3].remove();  // window
+                    gui.__controllers[3].remove();  // visual window
+                    gui.__controllers[3].remove();  // audio window
                     gui.__controllers[3].remove();  // video
                     var guiFormatParams, windowMax;
                     if (format == 'films') {
@@ -118,41 +126,47 @@
                         windowMax = 15;
                     }
                     // Add controllers back
-                    guiW = gui.add(guiFormatParams, 'windowSize').min(1).max(windowMax).step(1);
+                    guiVW = gui.add(guiFormatParams, 'visualWindow').min(1).max(windowMax).step(1);
+                    guiAW = gui.add(guiFormatParams, 'audioWindow').min(1).max(windowMax).step(1);
                     guiV = gui.add(guiFormatParams, 'video', data.format2titles[format]);
-                    addFinishChangeHandlers(guiW, guiV);
+                    addFinishChangeHandlers(guiVW, guiAW, guiV);
 
                     // Get new predictions
-                    getUpdatedPreds(guiFormatParams.video, guiFormatParams.windowSize); }
+                    getUpdatedPreds(guiFormatParams.video, guiFormatParams.visualWindow, guiFormatParams.audioWindow); }
                 );
-                function addFinishChangeHandlers(guiW, guiV) {
-                    guiW.onFinishChange(function(windowSize) {
+                function addFinishChangeHandlers(guiVW, guiAW, guiV) {
+                    guiVW.onFinishChange(function(visualWindow) {
                         var title = datgui.oneVideo[datgui.oneVideo.format].video;
-//                        if (datgui.oneVideo.format == 'films') {
-//                            title = datgui.
-//                        }
-//                        var title = datgui.oneVideo.format == 'films' ? datgui.oneVideo.films.video : datgui.oneVideo.shorts.video;
-                        getUpdatedPreds(title, windowSize);
+                        var audioWindow = datgui.oneVideo[datgui.oneVideo.format].audioWindow;
+                        getUpdatedPreds(title, visualWindow, audioWindow);
+                    });
+                    guiAW.onFinishChange(function(audioWindow) {
+                        var visualWindow = datgui.oneVideo[datgui.oneVideo.format].visualWindow;
+                        var title = datgui.oneVideo[datgui.oneVideo.format].video;
+                        getUpdatedPreds(title, visualWindow, audioWindow);
                     });
                     guiV.onFinishChange(function(title) {
-                        var windowSize = datgui.oneVideo[datgui.oneVideo.format].windowSize;
-//                        var windowSize = datgui.oneVideo.format == 'films' ? datgui.oneVideo.films.windowSize : datgui.oneVideo.shorts.windowSize;
+                        var visualWindow = datgui.oneVideo[datgui.oneVideo.format].visualWindow;
+                        var audioWindow = datgui.oneVideo[datgui.oneVideo.format].audioWindow;
 
                         // Window size may be too big for video
                         // Right now, in views.py, pred_len is calculated as the number of frame files
                         // However the actual length is ignores the credits
                         // Thus, this should be an upper bound
                         var nextVideoLen = data.title2pred_len[datgui.oneVideo.format][title];
-                        if (nextVideoLen < windowSize) {
+                        if (nextVideoLen < visualWindow) {
                             console.log('Video too short for current window size, changing window size to 1/4 video length');
-                            datgui.oneVideo[datgui.oneVideo.format].windowSize = Math.round(windowSize / 4);
-                            guiW.updateDisplay();
+                            var shortened = Math.max(1, Math.round(visualWindow / 4));
+                            datgui.oneVideo[datgui.oneVideo.format].visualWindow = shortened;
+                            datgui.oneVideo[datgui.oneVideo.format].audioWindow = shortened;
+                            guiVW.updateDisplay();
+                            guiAW.updateDisplay();
                         }
 
-                        getUpdatedPreds(title, datgui.oneVideo[datgui.oneVideo.format].windowSize);
+                        getUpdatedPreds(title, visualWindow, audioWindow);
                     });
                 }
-                addFinishChangeHandlers(guiW, guiV);
+                addFinishChangeHandlers(guiVW, guiAW, guiV);
                 guiR.onFinishChange(function() { drawOneVideo(datgui); });
             }
 
@@ -217,14 +231,15 @@
              **********************************************************************************************************/
             addOneVideoGUI();
             showImage("../static/videos/" + data.framepaths[0], 256, 256, '');
+            showMp3(data.mp3path);
             drawOneVideo(datgui);
 
             /***********************************************************************************************************
              * Some other handlers (should probably be moved somewhere)
              **********************************************************************************************************/
-            function getUpdatedPreds(title, windowSize) {
+            function getUpdatedPreds(title, visualWindow, audioWindow) {
                 $.ajax({
-                    url: '/api/pred/' + title + '/' + windowSize,
+                    url: '/api/pred/' + title + '/' + visualWindow + '/' + audioWindow,
                     type: 'GET',
                     success: function(resp) {
                         reset_and_redraw(resp, redraw_callback);
@@ -237,10 +252,12 @@
             function reset_and_redraw(resp, redraw_callback) {
                 data.preds = resp.preds;
                 data.framepaths = resp.framepaths;
+                data.mp3path = resp.mp3path;
                 redraw_callback();
             }
             function redraw_callback() {
                 showImage("/static/videos/" + data.framepaths[0], 256, 256, '');
+                showMp3(data.mp3path);
                 drawOneVideo(datgui);
             }
         }
@@ -265,6 +282,24 @@
         function removeFrame() {
             $('img').remove();
         }
+
+        function showMp3(mp3path) {
+            // Remove mp3
+            removeMp3();
+            // Add if there's a valid mp3path
+            if (mp3path != "") {
+                var audio = document.createElement('audio');
+                audio.src = "static/videos/" + mp3path;
+                audio.controls = "controls";
+                audio.style = "vertical-align: middle;";
+                var mp3Element = document.getElementById("mp3");
+                mp3Element.appendChild(audio);
+            }
+        }
+        function removeMp3() {
+            $('audio').remove();
+        }
+
         // Downsample time series in order to prevent aliasing
         function downsampleTimeseries(timeseries, downsample_rate) {
             var downsampled = [];
@@ -273,6 +308,7 @@
             }
             return downsampled;
         }
+
         function openInNewTab(url) {
             var win = window.open(url, '_blank');
             // win.focus();
@@ -311,16 +347,23 @@
             // Each object in dataset array corresponds to one line
             // e.g. one line for each emotion
             var dataset = [];
-            for (var key in data.preds) {
-                dataset.push({
-                    label: key,
-                    borderWidth: 0.1,
-                    data: downsampleTimeseries(data.preds[key], DOWNSAMPLE_RATE),
-                    backgroundColor: "rgba(15, 171, 182, 0.75)"
-                })
+            var COLORS = ["rgba(15, 171, 182, 0.75)", "rgba(216, 122, 21, 0.75)"];
+            var c_idx = 0;
+            for (var key in data.preds) {   // e.g. audio, visual
+                for (var label in data.preds[key]) {
+                    dataset.push({
+                        label: label,
+                        borderWidth: 0.1,
+                        data: downsampleTimeseries(data.preds[key][label], DOWNSAMPLE_RATE),
+                        backgroundColor: COLORS[c_idx]
+                    });
+                }
+                c_idx += 1;
             }
             // Use first set
-            var labels = getLabels(data.preds[Object.keys(data.preds)[0]]);
+            var firstData = data.preds[Object.keys(data.preds)[0]];
+            firstData = firstData[Object.keys(firstData)[0]];
+            var labels = getLabels(firstData);
             labels = downsampleTimeseries(labels, DOWNSAMPLE_RATE);
             var chartData = {
                 labels: labels,

@@ -6,6 +6,7 @@
 
 from flask import Flask, Response, request, render_template
 import json
+import math
 from natsort import natsorted
 import numpy as np
 import os
@@ -23,7 +24,8 @@ VIDEOS_PATH = 'shape/static/videos/'
 OUTPUTS_DATA_PATH = 'shape/outputs/cluster/data/'
 
 # For One Video view - (if else for local vs shannon)
-PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
+VIZ_PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
+AUDIO_PRED_FN = 'audio-valence_reg_4.csv'
 
 # For Clusters view:
 TS_FN = \
@@ -113,7 +115,8 @@ title2pred_len = {}     # films/shorts -> title -> len
 # For One Video view - used for initial curve to display
 cur_format = None
 cur_title = None
-cur_pd_df = None
+cur_viz_pd_df = None
+cur_audio_pd_df = None
 cur_vid_framepaths = None
 
 # For Clusters view
@@ -124,17 +127,34 @@ ts_idx2title = {}       # films/shorts -> idx -> title
 ########################################################################################################################
 # PREDICTION FUNCTIONS
 ########################################################################################################################
-def get_preds_from_df(df, window_len=48):
+def get_preds_from_dfs(name2df_and_window):
     """
-    Return dict. Each key is the label, value is list of smoothed frame-wise predictions
+    Return dict. Key is the type (visual/audio). Value is a dictionary that maps label to list of smoothed predictions.
     """
-    if len(df.columns) == 2:     # sent_biclass -> just show positive
-        preds = {'pos': list(smooth(df.pos.values, window_len=window_len))}
-    else:
-        preds = {}
-        for c in df.columns:
-            preds[c] = list(smooth(df[c].values, window_len=window_len))
+    preds = {}
+    for name, df_and_window in name2df_and_window.items():
+        df = df_and_window['df']
+        window = df_and_window['window']
+        preds[name] = {}
+        if name == 'visual':
+            values = list(smooth(df.pos.values, window_len=window)) if (df is not None) else []
+            preds[name]['visual-valence'] = values
+        elif name == 'audio':
+            values = list(smooth(df.Valence.values, window_len=window)) if (df is not None) else []
+            preds[name]['audio-valence'] = values
     return preds
+
+# def get_preds_from_df(df, window_len=48):
+#     """
+#     Return dict. Each key is the label, value is list of smoothed frame-wise predictions
+#     """
+#     if len(df.columns) == 2:     # sent_biclass -> just show positive
+#         preds = {'pos': list(smooth(df.pos.values, window_len=window_len))}
+#     else:
+#         preds = {}
+#         for c in df.columns:
+#             preds[c] = list(smooth(df[c].values, window_len=window_len))
+#     return preds
 
 def get_cur_vid_df_and_framepaths(cur_title):
     """
@@ -142,10 +162,21 @@ def get_cur_vid_df_and_framepaths(cur_title):
     new video. Framepaths are now relative to VIDEOS_PATH (which is a static path for js) instead of the full
     path so that the HTML template can display it.
     """
-    global title2vidpath, cur_pd_df, cur_vid_framepaths
+    global title2vidpath, cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths
 
     # Get dataframe
-    cur_pd_df = pd.read_csv(os.path.join(title2vidpath[cur_title], 'preds', PRED_FN))
+    viz_preds_path = os.path.join(title2vidpath[cur_title], 'preds', VIZ_PRED_FN)
+    if os.path.exists(viz_preds_path):
+        cur_viz_pd_df = pd.read_csv(viz_preds_path)
+    else:
+        cur_viz_pd_df = None
+
+    audio_preds_path = os.path.join(title2vidpath[cur_title], 'preds', AUDIO_PRED_FN)
+    if os.path.exists(audio_preds_path):
+        print audio_preds_path
+        cur_audio_pd_df = pd.read_csv(audio_preds_path)
+    else:
+        cur_audio_pd_df = None
 
     # Get framepaths
     cur_vid_framepaths = [f for f in os.listdir(os.path.join(title2vidpath[cur_title], 'frames')) if \
@@ -158,10 +189,22 @@ def get_cur_vid_df_and_framepaths(cur_title):
     vidpath = title2vidpath[cur_title]
     credit_idx = get_credits_idx(vidpath)
     if credit_idx:
-        cur_pd_df = cur_pd_df[:credit_idx]
+        if cur_viz_pd_df is not None:
+            cur_viz_pd_df = cur_viz_pd_df[:credit_idx]
+        if cur_audio_pd_df is not None:
+            cur_audio_pd_df = cur_audio_pd_df[:credit_idx]
         cur_vid_framepaths = cur_vid_framepaths[:credit_idx]
 
-    return cur_pd_df, cur_vid_framepaths
+    return cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths
+
+def get_cur_mp3path(cur_vid_framepaths):
+    # Get current mp3path if it exists
+    cur_mp3path = ''
+    vid_dirpath = os.path.dirname(os.path.dirname(cur_vid_framepaths[0]))
+    for f in os.listdir(os.path.join(VIDEOS_PATH, vid_dirpath)):
+        if f.endswith('mp3'):
+            cur_mp3path = os.path.join(vid_dirpath, f)
+    return cur_mp3path
 
 ########################################################################################################################
 # INITIAL SETUP
@@ -182,7 +225,7 @@ def get_all_vidpaths_with_frames_and_preds():
 def setup_initial_data():
     """
     Return initial data to pass to template.
-    Also set global variables cur_pd_df and cur_title
+    Also set global variables cur_viz_pd_df and cur_title
     """
     ####################################################################################################################
     # One video view (primarily) - set titles, videopaths, etc
@@ -280,7 +323,40 @@ def setup_initial_data():
             except Exception as e:
                 print e
 
+    # tmp()
+
     print 'Setup done'
+
+# def tmp():
+#     # DEBUGING
+#     global format2titles, title2pred_len, \
+#         cur_format, cur_title, cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths, \
+#         clusters, ts_idx2title, ts
+#
+#     # Get information for *first* video to show
+#     # cur_format = format2titles.keys()[0]
+#     cur_format = 'films'
+#     cur_title = format2titles[cur_format][0]
+#     cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
+#     cur_vid_preds = get_preds_from_dfs({'visual': {'df': cur_viz_pd_df, 'window': 300},  # window_len has to match default in html file
+#                                         'audio': {'df': cur_audio_pd_df, 'window': 1}})
+#
+#     import logging
+#     logging.debug(cur_format)
+#     print cur_format
+#     print cur_title
+#     print cur_viz_pd_df
+#     print cur_audio_pd_df
+#     print cur_vid_preds
+#     data = {'format2titles': format2titles,
+#             'framepaths': cur_vid_framepaths,
+#             'preds': cur_vid_preds,
+#             'title2pred_len': title2pred_len,
+#             # Clusters view
+#             'clusters': clusters,
+#             'ts_idx2title': ts_idx2title,
+#             'ts': ts}
+
 
 #################################################################################################
 # ROUTING FUNCTIONS
@@ -301,43 +377,51 @@ def shape():
     clusters:
         - for clusters view
     """
-    global format2titles, \
-        cur_format, cur_title, cur_pd_df, cur_vid_framepaths, \
-        clusters, ts_idx2title, ts, \
-        title2pred_len
+    global format2titles, title2pred_len, \
+        cur_format, cur_title, cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths, \
+        clusters, ts_idx2title, ts
 
     # Get information for *first* video to show
     # cur_format = format2titles.keys()[0]
     cur_format = 'films'
     cur_title = format2titles[cur_format][0]
-    cur_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
-    cur_vid_preds = get_preds_from_df(cur_pd_df, window_len=300)    # Window_len has to match default in html file
+    cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
+    cur_vid_preds = get_preds_from_dfs({'visual': {'df': cur_viz_pd_df, 'window': 600},  # window_len has to match default in html file
+                                        'audio': {'df': cur_audio_pd_df, 'window': 300}})
+    cur_mp3path = get_cur_mp3path(cur_vid_framepaths)
 
     data = {'format2titles': format2titles,
-            'framepaths': cur_vid_framepaths, 'preds': cur_vid_preds,
+            'framepaths': cur_vid_framepaths,
+            'preds': cur_vid_preds,
+            'title2pred_len': title2pred_len,
+            'mp3path': cur_mp3path,
+            # Clusters view
             'clusters': clusters,
             'ts_idx2title': ts_idx2title,
-            'ts': ts,
-            'title2pred_len': title2pred_len}
+            'ts': ts}
 
     return render_template('plot_shape.html', data=json.dumps(data))
 
-@app.route('/api/pred/<title>/<window_len>', methods=['GET'])
-def get_preds_and_frames(title, window_len):
+@app.route('/api/pred/<title>/<visual_window>/<audio_window>', methods=['GET'])
+def get_preds_and_frames(title, visual_window, audio_window):
     """
     Return predictions for a given movie with window_len; update global vars
     """
     global title2vidpath, \
-        cur_format, cur_title, cur_pd_df, cur_vid_framepaths
+        cur_format, cur_title, cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths
     if title != cur_title:
         title = title.encode('utf-8')
         cur_format = title2format[title]
         cur_title = title
-        cur_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
+        cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
 
-    print window_len, len(cur_pd_df)
-    preds = get_preds_from_df(cur_pd_df, window_len=int(window_len))
-    data = {'preds': preds, 'framepaths': cur_vid_framepaths}
+    # print window_len, len(cur_viz_pd_df)
+    # preds = get_preds_from_df(cur_viz_pd_df, window_len=int(window_len))
+    cur_vid_preds = get_preds_from_dfs({'visual': {'df': cur_viz_pd_df, 'window': int(visual_window)},  # window_len has to match default in html file
+                                        'audio': {'df': cur_audio_pd_df, 'window': int(audio_window)}})
+    cur_mp3path = get_cur_mp3path(cur_vid_framepaths)
+
+    data = {'preds': cur_vid_preds, 'framepaths': cur_vid_framepaths, 'mp3path': cur_mp3path}
 
     return Response(
         json.dumps(data),

@@ -1,14 +1,18 @@
 # Network class called by main, with train, test functions
 
-import json
+from collections import defaultdict
+import cPickle as pickle
+import librosa
+import math
 import numpy as np
 import os
-import pickle
 import tensorflow as tf
+import time
 
-from datasets import get_dataset
 from core.audio.AudioCNN import AudioCNN
 from core.utils.utils import get_optimizer, load_model, save_model, setup_logging
+from datasets import get_dataset, MELGRAM_20S_SIZE, NUMPTS_AND_MEANSTD_PATH
+from prepare_data import compute_log_melgram_from_np, N_FFT, N_MELS, HOP_LEN
 
 class Network(object):
     def __init__(self, params):
@@ -21,7 +25,7 @@ class Network(object):
         """Train"""
         self.dataset = get_dataset(self.params)
         self.logger = self._get_logger()
-        self.output_dim = self.dataset.get_output_dim()
+        # self.output_dim = self.dataset.get_output_dim()
         with tf.Session() as sess:
             # Get data
             self.logger.info('Retrieving training data and setting up graph')
@@ -30,7 +34,7 @@ class Network(object):
             va_clip_batch, va_label_batch = splits['valid']['clip_batch'], splits['valid']['label_batch']
 
             # # Get model
-            model = self._get_model(sess, tr_clip_batch, is_training=True)
+            model = self._get_model(sess, tr_clip_batch, self.params['bn_decay'], is_training=True)
 
             # Loss
             self._get_loss(model)
@@ -105,7 +109,7 @@ class Network(object):
         """Test"""
         self.dataset = get_dataset(self.params)
         self.logger = self._get_logger()
-        self.output_dim = self.dataset.get_output_dim()
+        # self.output_dim = self.dataset.get_output_dim()
         with tf.Session() as sess:
             # Get data
             self.logger.info('Getting test set')
@@ -114,7 +118,8 @@ class Network(object):
 
             # Get model
             self.logger.info('Building graph')
-            model = self._get_model(sess, te_clip_batch)
+            model = self._get_model(sess, te_clip_batch, self.params['bn_decay'], is_training=False)
+            # model = self._get_model(sess, te_clip_batch, self.params['bn_decay'], is_training=True)
 
             # Loss
             self._get_loss(model)
@@ -138,12 +143,13 @@ class Network(object):
 
             # Test
             for j in range(num_batches):
-                loss_val, summary = sess.run([self.loss, summary_op])
+                fc, out, loss_val, summary = sess.run([model.fc, model.out, self.loss, summary_op])
                 self.logger.info('Test minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
 
+                # print fc, out
                 # Write summary
-                if j % 10 == 0:
-                    summary_writer.add_summary(summary, j)
+                # if j % 10 == 0:
+                #     summary_writer.add_summary(summary, j)
 
             coord.request_stop()
             coord.join(threads)
@@ -153,85 +159,126 @@ class Network(object):
     # Predict
     ####################################################################################################################
 
-    # def get_all_vidpaths_with_frames(self, starting_dir):
-    #     """
-    #     Return list of full paths to every video directory that contains frames/
-    #     e.g. [<VIDEOS_PATH>/@Animated/@OldDisney/Feast/, ...]
-    #     """
-    #     vidpaths = []
-    #     for root, dirs, files in os.walk(starting_dir):
-    #         if 'frames' in os.listdir(root):
-    #             vidpaths.append(root)
-    #
-    #     return vidpaths
+    def get_all_vidpaths_with_mp3(self, starting_dir):
+        """
+        Return list of paths to every mp3 file (which contains the audio for the video)
+        e.g. [data/videos/films/animated/The Incredibles (2004)/The Incredibles (2004).mp3, ...]
+        """
+        self.logger.info('Getting all vidpaths with mp3')
+        mp3paths = []
+        for root, dirs, files in os.walk(starting_dir):
+            for f in files:
+                if f.endswith('mp3'):
+                    mp3paths.append(os.path.join(root, f))
+        return mp3paths
 
-    # def predict(self):
-    #     """Predict"""
-    #     self.logger = self._get_logger()
-    #
-    #     # If given path contains frames/, just predict for that one video
-    #     # Else walk through directory and predict for every folder that contains frames/
-    #     dirpaths = None
-    #     if os.path.exists(os.path.join(self.params['vid_dirpath'], 'frames')):
-    #         dirpaths = [self.params['vid_dirpath']]
-    #     else:
-    #         dirpaths = self.get_all_vidpaths_with_frames(self.params['vid_dirpath'])
-    #
-    #     for dirpath in dirpaths:
-    #         # Skip if exists
-    #         # if os.path.exists(os.path.join(dirpath, 'preds', 'sent_biclass_19.csv')):
-    #         #     print 'Skip: {}'.format(dirpath)
-    #         #     continue
-    #         with tf.Session() as sess:
-    #             # Get data
-    #             self.logger.info('Getting images to predict for {}'.format(dirpath))
-    #             self.dataset = get_dataset(self.params, dirpath)
-    #             self.output_dim = self.dataset.get_output_dim()
-    #             img_batch = self.dataset.setup_graph()
-    #
-    #             # Get model
-    #             self.logger.info('Building graph')
-    #             model = self._get_model(sess, img_batch)
-    #
-    #             # Initialize
-    #             coord, threads = self._initialize(sess)
-    #
-    #             # Restore model now that graph is complete -- loads weights to variables in existing graph
-    #             self.logger.info('Restoring checkpoint')
-    #             saver = load_model(sess, self.params)
-    #
-    #             # Make directory to store predictions
-    #             preds_dir = os.path.join(dirpath, 'preds')
-    #             if not os.path.exists(preds_dir):
-    #                 os.mkdir(preds_dir)
-    #
-    #             # Predict, write to file
-    #             idx2label = self.get_idx2label()
-    #             num_batches = self.dataset.get_num_batches('predict')
-    #             if self.params['load_epoch'] is not None:
-    #                 fn = '{}_{}.csv'.format(self.params['obj'], self.params['load_epoch'])
-    #             else:
-    #                 fn = '{}.csv'.format(self.params['obj'])
-    #
-    #             with open(os.path.join(preds_dir, fn), 'w') as f:
-    #                 labels = [idx2label[i] for i in range(self.output_dim)]
-    #                 f.write('{}\n'.format(','.join(labels)))
-    #                 for j in range(num_batches):
-    #                     last_fc, probs = sess.run([model.last_fc, model.probs],
-    #                                               feed_dict={'img_batch:0': img_batch.eval()})
-    #
-    #                     if self.params['debug']:
-    #                         print last_fc
-    #                         print probs
-    #                     for frame_prob in probs:
-    #                         frame_prob = ','.join([str(v) for v in frame_prob])
-    #                         f.write('{}\n'.format(frame_prob))
-    #
-    #             coord.request_stop()
-    #             coord.join(threads)
-    #
-    #         # Clear previous video's graph
-    #         tf.reset_default_graph()
+    def predict(self):
+        """Predict"""
+        self.logger = self._get_logger()
+
+        # If given path contains an mp3 file, just predict for that one video
+        # Else walk through directory and predict for every folder that contains an mp3 file
+        mp3paths = None
+        mp3_in_vid_dirpath = ['mp3' in f for f in os.listdir(self.params['vid_dirpath'])]
+        if True in mp3_in_vid_dirpath:
+            mp3_f = os.listdir(self.params['vid_dirpath'])[mp3_in_vid_dirpath.index(True)]
+            mp3paths = [os.path.join(self.params['vid_dirpath'], mp3_f)]
+        else:
+            mp3paths = self.get_all_vidpaths_with_mp3(self.params['vid_dirpath'])
+
+        # Load mean and std
+        mean, std = self.load_meanstd()
+
+        for mp3path in mp3paths:
+            # Skip if exists
+            # if os.path.exists(os.path.join(dirpath, 'preds', 'sent_biclass_19.csv')):
+            #     print 'Skip: {}'.format(dirpath)
+            #     continue
+            start_time = time.time()
+            with tf.Session() as sess:
+                # Get data
+                self.logger.info('Loading mp3 to predict for {}'.format(mp3path))
+                src, sr = librosa.load(mp3path, sr=None)    # uses default sample rate, which should be 12000
+
+                # Calculate number of points given 1-D source signal
+                # Example: (l-w)/s + 1; l = 101, w = 20, s = 10
+                src_nsec = len(src) / sr
+                melgram_nsec = 20
+                num_pts = ((src_nsec - melgram_nsec) / float(self.params['stride'])) + 1      # 20 for 20 second melgram
+                num_pts = int(math.floor(num_pts))
+                num_batches = int(math.floor(float(num_pts) / self.params['batch_size']))
+
+                # Get model
+                self.logger.info('Creating dummy input and getting model')
+                # Feed in constant tensor as clip_batch that will get overridden by feed_dict
+                batch_shape = [self.params['batch_size']] + MELGRAM_20S_SIZE + [1]
+                with tf.variable_scope('dummy_input'):
+                    self.clip_batch = tf.zeros(batch_shape)
+                # model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=True)
+                model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=False)
+
+                # Initialize
+                coord, threads = self._initialize(sess)
+
+                # Restore model now that graph is complete -- loads weights to variables in existing graph
+                self.logger.info('Restoring checkpoint')
+                saver = load_model(sess, self.params)
+
+                # Make directory to store predictions
+                preds_dir = os.path.join(os.path.dirname(mp3path), 'preds')
+                if not os.path.exists(preds_dir):
+                    os.mkdir(preds_dir)
+
+                # Get file to write predictions
+                if self.params['load_epoch'] is not None:
+                    fn = 'audio-{}_{}.csv'.format(self.params['obj'], self.params['load_epoch'])
+                else:
+                    fn = 'audio-{}.csv'.format(self.params['obj'])
+
+                # Predict
+                s2preds = defaultdict(list)
+                for j in range(num_batches):
+                    cur_batch = np.zeros(batch_shape)
+                    for k in range(self.params['batch_size']):
+                        src_start_idx = (j * k) * (sr * self.params['stride'])
+                        src_end_idx = (j * (k+1)) * (sr * self.params['stride'])
+                        cur_src = src[src_start_idx:src_end_idx]
+                        cur_melgram = compute_log_melgram_from_np(cur_src, melgram_nsec, sr, HOP_LEN, N_FFT, N_MELS)
+                        cur_melgram = (cur_melgram - mean) / std
+                        cur_batch[k] = np.expand_dims(cur_melgram, 2)
+
+                    cur_batch = cur_batch.astype(np.float32, copy=False)
+                    fc, outs = sess.run([model.fc, model.out], feed_dict={'clip_batch:0': cur_batch})
+
+                    if self.params['debug']:
+                        # print fc, outs
+                        print outs
+
+                    batch_start_s = (j * self.params['batch_size'] * self.params['stride'])      # second
+                    for k, out in enumerate(outs):
+                        cur_melgram_s = batch_start_s + (k * self.params['stride'])
+                        for rel_s in range(melgram_nsec):
+                            cur_s = cur_melgram_s + rel_s
+                            # print batch_start_s, cur_melgram_s, rel_s, cur_s
+                            s2preds[cur_s].append(out[0])
+
+                with open(os.path.join(preds_dir, fn), 'wb') as f:
+                    f.write('Valence\n')
+                    for s in sorted(s2preds):
+                        # print s, s2preds[s]
+                        pred = sum(s2preds[s]) / float(len(s2preds[s]))
+                        f.write('{}\n'.format(pred))
+
+                print 'Number pts according to source signal: {}'.format(num_pts)
+                print 'Number batches according to source signal: {}'.format(num_batches)
+                print 'Length of source signal in seconds: {}'.format(src_nsec)
+                print 'Time elapsed: {} minutes'.format((time.time() - start_time) / 60.0)
+
+                coord.request_stop()
+                coord.join(threads)
+
+            # Clear previous video's graph
+            tf.reset_default_graph()
 
     ####################################################################################################################
     # Helper functions
@@ -244,7 +291,7 @@ class Network(object):
         # _, self.logger = setup_logging(save_path=logs_path)
         return logger
 
-    def _get_model(self, sess, clip_batch, is_training=None):
+    def _get_model(self, sess, clip_batch, bn_decay, is_training=None):
         """Return model (sess is required to load weights for vgg)"""
         # Get model
         model = None
@@ -253,6 +300,7 @@ class Network(object):
             model = AudioCNN(
                 # output_dim=self.output_dim,
                 clips=clip_batch,
+                bn_decay=bn_decay,
                 is_training=is_training)
 
         return model
@@ -282,3 +330,13 @@ class Network(object):
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         return coord, threads
+
+    def load_meanstd(self):
+        """
+        Load the pre-computed number of points per train-valid-test split and per mel-bin mean and stddev so we can
+        normalize data.
+        """
+        numpts_and_meanstd = pickle.load(open(NUMPTS_AND_MEANSTD_PATH, 'rb'))
+        mean = numpts_and_meanstd['mean']      # (number of mel-bins, 1)
+        std = numpts_and_meanstd['std']        # (number of mel-bins, 1)
+        return mean, std

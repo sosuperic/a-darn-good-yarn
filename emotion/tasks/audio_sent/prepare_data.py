@@ -35,6 +35,11 @@ SONGS_PER_FOLDER = 100   # 26 * 26 * 26 * 75 = 1757600
 MELGRAM_30S_SIZE = (96, 1407)
 NUMPTS_AND_MEANSTD_PATH = 'data/spotify/numpts_and_meanstd.pkl'
 
+# Mel-spectrogram parameters
+N_FFT = 512
+N_MELS = 96
+HOP_LEN = N_FFT / 2   # overlap 50%
+
 ########################################################################################################################
 # Million song dataset (msd) and Spotify
 # Overview of dataset created and relationship between msd and Spotify:
@@ -642,36 +647,35 @@ def compute_log_melgram(audio_path):
 
     # Audio and mel-spectrogram parameters
     SR = 12000
-    N_FFT = 512
-    N_MELS = 96
-    HOP_LEN = N_FFT / 2   # overlap 50%
     DUR = 30              # in seconds
 
     # Load audio and downsample
     src, orig_sr = librosa.load(audio_path, sr=None)  # whole signal at native sampling rate
     src = librosa.core.resample(src, orig_sr, SR)     # downsample down to SR
+    melgram = compute_log_melgram_from_np(src, DUR, SR, HOP_LEN, N_FFT, N_MELS)
 
+    return melgram
+
+def compute_log_melgram_from_np(src, dur, sr, hop_len, n_fft, n_mels):
+    """
+    Compute a mel-spectrogram from a numpy array
+    """
     # Adjust size if necessary. Vast, vast majority of mp3's are 30 seconds and should require little adjustment.
     n_sample = src.shape[0]
-    n_sample_fit = int(DUR * SR)
+    n_sample_fit = int(dur * sr)
     if n_sample < n_sample_fit:                       # if too short, pad with zeros
-        src = np.hstack((src, np.zeros((int(DUR*SR) - n_sample,))))
+        src = np.hstack((src, np.zeros((int(dur * sr) - n_sample,))))
     elif n_sample > n_sample_fit:                     # if too long, take middle section of length DURA seconds
         src = src[(n_sample-n_sample_fit)/2:(n_sample+n_sample_fit)/2]
 
     # Compute log mel spectrogram
     logam = librosa.logamplitude
     melgram = librosa.feature.melspectrogram
-    ret = logam(melgram(y =src, sr=SR, hop_length=HOP_LEN,
-                        n_fft=N_FFT, n_mels=N_MELS)**2,
+    ret = logam(melgram(y =src, sr=sr, hop_length=hop_len,
+                        n_fft=n_fft, n_mels=n_mels)**2,
                 ref_power=1.0)
 #     ret = ret[np.newaxis, np.newaxis, :]
-
-    if ret.shape != MELGRAM_30S_SIZE:
-        print ret.shape
-        return None
-    else:
-        return ret
+    return ret
 
 def precompute_numpts_and_meanstd_from_tfrecords():
     """
@@ -838,6 +842,24 @@ def extract_audio_from_vids(vids_dirpath):
 
     errors_f.close()
 
+def remove_bad_mp3s(vids_dirpath, size):
+    """
+    Remove all mp3's that are less than size in MB. Should be relatively easy to remove bad mp3s for movies by setting
+    size to say 1, but not sure what the cutoff should be for shorts (0 will catch most but not all).
+    Will probably have to come up with a different way to detect bad mp3s, e.g. length of mp3 should be relatively
+    equal to length of frames/, length of movie.
+    """
+    for root, dirs, files in os.walk(vids_dirpath):
+        for f in files:
+            if f.endswith('mp3'):
+                fp = os.path.join(root, f)
+                nbytes = os.path.getsize(fp)
+                nmb = nbytes / 1000000.0
+                if nmb <= size:
+                    os.remove(fp)
+                    print '{}: {} is less than {} -- removing'.format(fp, nmb, size)
+
+
 if __name__ == '__main__':
 
     # Set up commmand line arguments
@@ -857,7 +879,9 @@ if __name__ == '__main__':
                         action='store_true')
 
     parser.add_argument('--extract_audio_from_vids', dest='extract_audio_from_vids', action='store_true')
+    parser.add_argument('--remove_bad_mp3s', dest='remove_bad_mp3s', action='store_true')
     parser.add_argument('--vids_dirpath', dest='vids_dirpath', default=None, help='e.g. data/videos/films')
+    parser.add_argument('--bad_mp3_size', dest='bad_mp3_size', type=float, default=0.0, help='upper limit in MB')
 
     cmdline = parser.parse_args()
 
@@ -887,3 +911,5 @@ if __name__ == '__main__':
         modify_tfrecords()
     elif cmdline.extract_audio_from_vids:
         extract_audio_from_vids(cmdline.vids_dirpath)
+    elif cmdline.remove_bad_mp3s:
+        remove_bad_mp3s(cmdline.vids_dirpath, cmdline.bad_mp3_size)

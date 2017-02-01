@@ -6,48 +6,52 @@ from datasets import MELGRAM_20S_SIZE
 import tensorflow as tf
 
 class AudioCNN(object):
-    def __init__(self, clips=None, is_training=None):
+    def __init__(self, clips, bn_decay=None, is_training=None):
         self.clips = clips
         self.batch_size = self.clips.get_shape().as_list()[0]        # variable sized batch
+        self.bn_decay = bn_decay
         self.is_training = is_training
 
         # Create graph
         # Input
-        self.img_batch = tf.placeholder_with_default(
+        self.clips_batch = tf.placeholder_with_default(
             self.clips,
             shape=[self.batch_size, MELGRAM_20S_SIZE[0], MELGRAM_20S_SIZE[1], 1],
             name='clip_batch')
 
-        # TODO: batch normalization
-
         # Rest of graph
         with tf.variable_scope('convblock1'):
-            self.conv1 = self.conv(self.img_batch, [3, 3, 1, 32], [32], [1, 1, 1, 1])
-            self.bn1 = tf.contrib.layers.batch_norm(self.conv1, is_training=self.is_training)
+            self.conv1 = self.conv(self.clips_batch, [3, 3, 1, 32], [32], [1, 1, 1, 1])
+            self.bn1 = tf.contrib.layers.batch_norm(self.conv1, decay=self.bn_decay, is_training=self.is_training, updates_collections=None)
+            # self.bn1 = tf.contrib.layers.batch_norm(self.conv1, is_training=self.is_training)
             self.elu1 = tf.nn.elu(self.bn1)
             self.pool1 = tf.nn.max_pool(self.elu1, [1, 2, 4, 1], [1, 2, 4, 1], 'SAME')        # wait should ti be 1,2,4,1 for stride?
 
         with tf.variable_scope('convblock2'):
             self.conv2 = self.conv(self.pool1, [3, 3, 32, 128], [128], [1, 1, 1, 1])
-            self.bn2 = tf.contrib.layers.batch_norm(self.conv2, is_training=self.is_training)
+            self.bn2 = tf.contrib.layers.batch_norm(self.conv2, decay=self.bn_decay, is_training=self.is_training, updates_collections=None)
+            # self.bn2 = tf.contrib.layers.batch_norm(self.conv2, is_training=self.is_training)
             self.elu2 = tf.nn.elu(self.bn2)
             self.pool2 = tf.nn.max_pool(self.elu2, [1, 2, 4, 1], [1, 2, 4, 1], 'SAME')
 
         with tf.variable_scope('convblock3'):
             self.conv3 = self.conv(self.pool2, [3, 3, 128, 128], [128], [1, 1, 1, 1])
-            self.bn3 = tf.contrib.layers.batch_norm(self.conv3, is_training=self.is_training)
+            self.bn3 = tf.contrib.layers.batch_norm(self.conv3, decay=self.bn_decay, is_training=self.is_training, updates_collections=None)
+            # self.bn3 = tf.contrib.layers.batch_norm(self.conv3, is_training=self.is_training)
             self.elu3 = tf.nn.elu(self.bn3)
             self.pool3 = tf.nn.max_pool(self.elu3, [1, 2, 4, 1], [1, 2, 4, 1], 'SAME')
 
         with tf.variable_scope('convblock4'):
             self.conv4 = self.conv(self.pool3, [3, 3, 128, 192], [192], [1, 1, 1, 1])
-            self.bn4 = tf.contrib.layers.batch_norm(self.conv4, is_training=self.is_training)
+            self.bn4 = tf.contrib.layers.batch_norm(self.conv4, decay=self.bn_decay, is_training=self.is_training, updates_collections=None)
+            # self.bn4 = tf.contrib.layers.batch_norm(self.conv4, is_training=self.is_training)
             self.elu4 = tf.nn.elu(self.bn4)
             self.pool4 = tf.nn.max_pool(self.elu4, [1, 2, 4, 1], [1, 2, 4, 1], 'SAME')
 
         with tf.variable_scope('convblock5'):
             self.conv5 = self.conv(self.pool4, [3, 3, 192, 256], [256], [1, 1, 1, 1])
-            self.bn5 = tf.contrib.layers.batch_norm(self.conv5, is_training=self.is_training)
+            self.bn5 = tf.contrib.layers.batch_norm(self.conv5, decay=self.bn_decay, is_training=self.is_training, updates_collections=None)
+            # self.bn5 = tf.contrib.layers.batch_norm(self.conv5, is_training=self.is_training)
             self.elu5 = tf.nn.elu(self.bn5)
             self.pool5 = tf.nn.max_pool(self.elu5, [1, 4, 4, 1], [1, 4, 4, 1], 'SAME')
 
