@@ -1,16 +1,26 @@
-# Visual emotion analysis
-Includes analysis of positive-negative sentiment and emotions on images and videos.
+# Multi-modal analysis of emotional content in videos
 
-## website
-- Used to plot shape and adjust window size, see frames at various points of curve
-- symlink website/shape/static/videos -> <videos path>
+Producing emotional curves based on visual, audio, and text. Labels include positive-negative sentiment, energy, emotions, and emotional concepts. These emotional curves are then clustered using dynamic time warping distance as a distance metric.
+
+## Current test corpora
+- ~500 films
+- ~1400 Vimeo shorts
+
+## GUI
+- Used to plot emotional curves and view clusterings of curves
+- symlink `website/shape/static/videos` -> `<videos path>`
 - Run in website/ by:
-    * `python run.py` (local)
+    * On local: `python run.py`
         * visit: `http://localhost:7898/shape`
-    * `gunicorn -w 2 -b 0.0.0.0:7898 run:app` (on Shannon)
+    * On shannon: `gunicorn -w 2 -b 0.0.0.0:7898 run:app`
         * visit: `http://18.85.54.48:7898/shape`
 
-## symlinks
+## Running
+
+#### Tasks
+Each task in `tasks/` allows one to train, test, and predict with a number of models for a given modality.
+
+#### Setting up symlinks
 - List of symlinks set up
     * Each dataset in `data/`
         * `MVSO`, `Sentibank`, `emolex`, `videos`, `you_imemo`
