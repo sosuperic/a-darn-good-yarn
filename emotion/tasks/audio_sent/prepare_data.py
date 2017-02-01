@@ -832,7 +832,8 @@ def extract_audio_from_vids(vids_dirpath):
                 print 'Saving to: {}'.format(out_fp)
                 # NOTE: 12000 sample rate because that's what used for tfrecord melgram features
                 # Note: Not using split() on bash command string because path's may have spaces
-                cmd = ['ffmpeg', '-i'] + [movie_fp] + ['-ar', '12000', '-q:a', '0', '-map', 'a'] + [out_fp]
+                cmd = ['ffmpeg', '-i'] + [movie_fp] + ['-ar', '12000', '-q:a', '0', '-c:a', 'libmp3lame'] + [out_fp]
+                # cmd = ['ffmpeg', '-i'] + [movie_fp] + ['-ar', '12000', '-q:a', '0', '-map', 'a'] + [out_fp]
                 subprocess.call(cmd, stdout=subprocess.PIPE)
                 print 'Done extracting'
 
