@@ -387,7 +387,7 @@ def extract_highlight_clips(vids_dirpath, overwrite, verbose):
                 if min_dist > 0:                            # clips don't actually 'overlap', just ignore the second
                     continue
                 else:
-                    if (last_extrema_modality == modality):     # remove extrema (i.e. remove cur_cc)
+                    if last_extrema_modality == modality:     # remove extrema (i.e. remove cur_cc)
                         cur_cc = []
                         last_extrema_start = ccs[-1][0] if len(ccs) > 0 else float('-inf')
                     else:       # different modality
