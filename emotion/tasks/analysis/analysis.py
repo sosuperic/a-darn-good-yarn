@@ -20,10 +20,10 @@ import sqlite3
 from core.predictions.ts_cluster import *
 from core.predictions.hierarchical_cluster import *
 from core.predictions.utils import DTWDistance, fastdtw_dist, LB_Keogh, smooth
-from core.utils.utils import setup_logging, get_credits_idx
+from core.utils.utils import setup_logging, get_credits_idx, VIZ_SENT_PRED_FN
 
 # For local vs shannon`
-PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
+VIZ_SENT_PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
 
 OUTPUTS_PATH = 'outputs/cluster/'
 VIDEOS_PATH = 'data/videos'
@@ -538,7 +538,7 @@ class Analysis(object):
         for root, dirs, files in os.walk(starting_dir):
             if ('preds' in dirs) and ('frames' in dirs) \
                     and (len(os.listdir(os.path.join(root, 'frames'))) > 0) \
-                    and (PRED_FN in os.listdir(os.path.join(root, 'preds'))):
+                    and (VIZ_SENT_PRED_FN in os.listdir(os.path.join(root, 'preds'))):
                 vidpaths.append(root)
 
         return vidpaths
@@ -824,7 +824,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_nframes', dest='max_nframes', type=int, default=float('inf'),
                         help='filter out videos with more frames than this. May be used with shorts to filter out'
                              'the high end (7 out of 1400 shorts are longer than 30 minutes')
-    parser.add_argument('--pred_fn', dest='pred_fn', default=PRED_FN, help='pred file name')
+    parser.add_argument('--pred_fn', dest='pred_fn', default=VIZ_SENT_PRED_FN, help='pred file name')
 
     # Clustering-specific parameters
     parser.add_argument('-r', dest='r', type=int, default=None, help='LB_Keogh window size')

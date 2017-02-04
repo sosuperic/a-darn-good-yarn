@@ -2,27 +2,33 @@
 
 import argparse
 from collections import defaultdict, Counter
+import datetime
 from fuzzywuzzy import fuzz
 import io
 import json
 import os
+import pandas as pd
 import pickle
 from pprint import pprint
 import re
+import shutil
 import sqlite3
 import subprocess
+import time
 
+from core.predictions.utils import detect_peaks, smooth
 from core.utils.CreditsLocator import CreditsLocator
 from core.utils.MovieReader import MovieReader
-from core.utils.utils import VID_EXTS
+from core.utils.utils import VID_EXTS, VIZ_SENT_PRED_FN, AUDIO_SENT_PRED_FN
 
 # Videos path
 VIDEOS_PATH = 'data/videos'
+HIGHLIGHTS_PATH = 'data/videos/highlights'
 
 # CMU Movie Summary path
 CMU_PATH = 'data/CMU_movie_summary/MovieSummaries/'
 
-# Videos
+# Video DBs
 VIDEOPATH_DB = 'data/db/VideoPath.db'
 VIDEOMETADATA_DB = 'data/db/VideoMetadata.pkl'
 
@@ -160,6 +166,394 @@ def save_credits_index(vids_dir, overwrite_files=False):
     print '=' * 100
     print 'Credits not located for {} movies:'.format(len(not_located))
     pprint(sorted(not_located))
+
+########################################################################################################################
+# VideoPath DB
+########################################################################################################################
+def extract_highlight_clips(vids_dirpath, overwrite, verbose):
+    """
+    Use the saved visual and audio predictions to extract and save clips from peaks and valleys. These will be labeled
+    for ground truth. Currently uses the visual sentiment and negative predictions.
+
+    Parameters
+    ----------
+    vids_dirpath: str, e.g. 'data/videos/films'
+    overwrite: boolean - overwrite clips. Required in order to get ffmpeg to run without having to press 'y'.
+    verbose: boolean - pipe ffmpeg process output to stdout
+
+    Notes
+    -----
+    - Currently skips non-mp4 videos. Don't need clips on all movies anyway.
+    - Parameters
+        - MPD: the mpd should be a reasonably high value, say 600 (seconds) to a) prevent extracting scenes that are
+        too close to each other, and b) prevent extracting too many scenes.
+        - MERGE_SR: if > 1 (say 2 or 3) MERGE_MIN_DIST should probably be 0
+        - MPH: preds need to be range_norm()'d
+    """
+    CLIP_START_NPREDS = 300     # number of predictions at start to ignore
+    CLIP_END_NPREDS = 600       # number of predictions at end to ignore
+    WINDOW_LEN = 600            # for smoothing
+    SHOW_EXTREMA = False         # just used during debugging detect_peaks
+    MPD = 600                   # min peak distance in detect_peaks
+    MPH = 0.85                  # Get peaks at least as large as this value, valleys as low as 1-MPH
+    MERGE_MIN_DIST = 0          # minimum distance between extrema when merging
+    MERGE_SR = 1                # take every _ point from merged extrema in order to reduce points.
+    CLIP_LENGTH = 30
+    OUT_WIDTH = 640
+
+    def find_movie_file(files):
+        """
+        Find movie file (name) in list of files if it exists
+        """
+        for f in files:
+            for ext in VID_EXTS:
+                if f.endswith(ext):
+                    return f
+        return None
+
+    def get_timestamp_str(seconds):
+        """Return '0h3m01s' for 181"""
+        m, s = divmod(seconds, 60)
+        h, m = divmod(m, 60)
+        timestamp_str = '{}h{:02}m{:02}s'.format(int(h),int(m),int(s))
+        return timestamp_str
+
+    def range_norm(preds):
+        """
+        Given np array of preds, normalize each value to [0,1] by subtracting min and dividing by range
+        """
+        return (preds - preds.min()) / (preds.max() - preds.min())
+
+    def merge_extrema(peaks_valleys, modalities, extrema_types, min_dist=MERGE_MIN_DIST, sr=MERGE_SR):
+        """
+        Combine and dedupe lists of extremas
+
+        Parameters
+        ----------
+        peaks_valleys: list of list of indices - each sublist stores index of an extrema
+        modalities: list of strs - modality  of each sublist in peaks_and_valleys, e.g. audio
+        extrema_types: list of strs - extrema_type of each sublist in peaks_and_valleys, e.g. valley
+        min_dist: int - minimum distance between end of clip1 and start of clip2
+        sr: int - take every other, every third, every sr point
+            - another quick way to reduce number of points (min_dist also reduces, but has its own problems --
+              see todo in below comments)
+
+        Returns
+        -------
+        extrema: list of indices where extrema occur
+        tags: list of lists. tag[i] stores names for extrema i
+            - e.g. some extrema might be both audio-peak and visual-peak
+
+        Methodology
+        -----------
+        Dealing with overlaps
+            1) Same modality, same extremum-type (e.g. audio-valley audio-valley):
+            - The minimum-peak-distance (mpd flag in detect_peaks) should be greater than the clip length, which means
+            this shouldn't happen. In fact, the mpd should be a reasonably high value, say 600 (seconds)
+            to a) prevent extracting scenes that are too close to each other, and b) prevent extracting
+            too many scenes.
+
+            2) Same modality, different extremum-type (e.g. audio-peak audio-valley):
+            - Throw out these extrema.
+            - Reasoning: a) scene might be ambiguous, b) not particularly interested in 'diagnosing' these because
+              next point is main example of when this happens (i.e. I've already diagnosed it and it's not really an
+              issue) per se.
+            - Case: after looking at some plots with SHOW_EXTREMA=True, this happens sometimes when there is a minor
+            peak followed by a very minor valley (minor because the smoothing would prevent drastic changes, i.e.
+            no large peaks followed by large valleys).
+
+            3) Different modality (e.g. audio-peak visual-valley; audio-valley visual-valley)
+            - After rules 1) and 2), this is the only type of overlap that can happen.
+            - Note that it could still be the case that A overlaps with B, which overlaps with C, etc.
+                - Example of such a 'connected-component': A = audio-valley, B = visual-peak, C = audio-valley
+
+            - In general, we want overlaps between modalities -- these are potentially more interesting because
+            either the two modalities match (both peaks or both valleys), or they differ. In the former case, we would
+            like to confirm the extrema. In the later, we would like to diagnose the clip.
+
+            - When the connected-component size == 2: take the index as the average of indices of the overlapping clips
+            - When the connected-copmonent size > 2: ignore these extrema
+                - Reasoning:
+                    a) scene might be ambiguous (e.g. audio-valley, visual-peak, audio-peak)
+                    b) taking the index as some average of 3+ may miss out on context and what made that point an
+                       extrema.
+                        - Example: [30,59,88]. Ranges are [15-45], [44-74], [73-105]. No way to keep same clip length
+                        and include at least 50% of each range
+
+        Enforce minimum distance between clips, e.g. min_dist = 30 --> [0,30], [61, 91]
+            - Step 1: changing the overlap boolean inequaity to <= min_dist + CLIP_LENGTH
+            - Step 2: Think this would mean no overlaps though?
+                - Can't take average of two clips that don't even actually overlap
+                - So if overlap, just take the first one.
+                    - TODO: However, this doesn't take into account the magnitude of each extrema. Perhaps
+                    the second one should be chosen if it is a 'better' peak.
+                    - TODO: Each peak should have a peak score, which is a function of the preds curve and the modality.
+            - Probably not that many overlaps anyway though to be honest. Given that I'm trying to find major
+            peaks and valleys using detect_peaks, and 30 seconds is an awfully small window for the visual
+            and audio to overlap, even if the models were dead accurate.
+
+
+        Test
+        ----
+            CLIP_LENGTH = 5
+
+            def test(preds, modalities, extrema_types,):
+              extrema, tags = merge_extrema(preds, modalities, extrema_types)
+              print '=' * 50
+              print extrema
+              print tags
+
+            # Test - no overlap, super simple
+            modalities = ['visual', 'audio']
+            extrema_types = ['peak', 'valley']
+            A = [0]
+            B = [10]
+            test([A, B], modalities, extrema_types)
+
+            # Test - no overlap, longer
+            modalities = ['visual', 'audio']
+            extrema_types = ['peak', 'valley']
+            A = [0, 20, 40, 60, 80]
+            B = [10, 30, 50, 70, 90]
+            test([A, B], modalities, extrema_types)
+
+            # Test - same modality overlap
+            modalities = ['visual', 'visual']
+            extrema_types = ['peak', 'valley']
+            A = [0]
+            B = [3]
+            test([A, B], modalities, extrema_types)
+
+            # Test - different modality overlap
+            modalities = ['visual', 'audio']
+            extrema_types = ['peak', 'valley']
+            A = [0]
+            B = [3]
+            test([A, B], modalities, extrema_types)
+
+            # Test - 3 overlap
+            modalities = ['visual', 'audio']
+            extrema_types = ['peak', 'valley']
+            A = [0, 8]
+            B = [4]
+            test([A, B], modalities, extrema_types)
+
+            # Test - overlaps
+            modalities = ['visual', 'visual', 'audio', 'audio']
+            extrema_types = ['peak', 'valley', 'peak', 'valley']
+            A = [0, 20]
+            B = [2, 50, 100]
+            C = [22, 30, 52]
+            D = [54, 102, 150]
+            test([A, B, C, D], modalities, extrema_types)
+
+        Test outputs
+        ------------
+            ==================================================
+            [0.0, 10.0]
+            [['visual-peak'], ['audio-valley']]
+            ==================================================
+            [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0]
+            [['visual-peak'], ['audio-valley'], ['visual-peak'], ['audio-valley'], ['visual-peak'], ['audio-valley'],
+            ['visual-peak'], ['audio-valley'], ['visual-peak'], ['audio-valley']]
+            ==================================================
+            []
+            []
+            ==================================================
+            [1.5]
+            [['visual-peak', 'audio-valley']]
+            ==================================================
+            []
+            []
+            ==================================================
+            [21.0, 30.0, 101.0, 150.0]
+            [['visual-peak', 'audio-peak'], ['audio-peak'], ['visual-valley', 'audio-valley'], ['audio-valley']]
+        """
+        # Combine extrema points in sorted order
+        for i, lst in enumerate(peaks_valleys):            # tag each item in each sublist with its name
+            peaks_valleys[i] = [(idx, modalities[i], extrema_types[i]) for idx in lst]
+        peaks_valleys = [item for sublist in peaks_valleys for item in sublist]     # flatten
+        peaks_valleys = sorted(peaks_valleys)
+
+        # Merge, dedup, remove close extrema, etc.
+        ccs = []        # list of (start, tags), where tags is a list
+        last_extrema_start = float('-inf')
+        last_extrema_modality = None
+        cur_cc = []     # list of (start, tag)
+        for i in range(len(peaks_valleys)):
+            start, modality, extremum_type = peaks_valleys[i]
+            overlap = (start - last_extrema_start) <= CLIP_LENGTH + min_dist
+            if overlap:
+                if min_dist > 0:                            # clips don't actually 'overlap', just ignore the second
+                    continue
+                else:
+                    if (last_extrema_modality == modality):     # remove extrema (i.e. remove cur_cc)
+                        cur_cc = []
+                        last_extrema_start = ccs[-1][0] if len(ccs) > 0 else float('-inf')
+                    else:       # different modality
+                        if len(cur_cc) == 1:
+                            cur_cc.append((start, modality + '-' + extremum_type))
+                            last_extrema_start = start
+                            last_extrema_modality = modality
+                        else:   # adding another one will result in cc_size of 3, so remove extrema (i.e. remove cur_cc)
+                            cur_cc = []
+                            last_extrema_start = ccs[-1][0] if len(ccs) > 0 else float('-inf')
+            else:
+                # No overlap, so add the 'current' (previous now) cc and update the current cc
+                if len(cur_cc) > 0:         # will be 0 the first start pass through
+                    cc_start = sum([s for s, t in cur_cc]) / float(len(cur_cc))
+                    cc_tags = [t for s, t in cur_cc]
+                    ccs.append((cc_start, cc_tags))
+
+                cur_cc = [(start, modality + '-' + extremum_type)]       # extremum, tag
+                last_extrema_start = start
+                last_extrema_modality = modality
+
+        # Finish up
+        if len(cur_cc) > 0:
+          cc_start = sum([start for start, tag in cur_cc]) / float(len(cur_cc))
+          cc_tags = [tag for start, tag in cur_cc]
+          ccs.append((cc_start, cc_tags))
+
+        # Downsample
+        ccs = ccs[0:len(ccs):sr]
+
+        # Unzip ccs
+        extrema = []
+        tags = []
+        for e, t in ccs:
+          extrema.append(e)
+          tags.append(t)
+
+        return extrema, tags
+
+    def filter_ends(preds, start_npreds=CLIP_START_NPREDS, end_npreds=CLIP_END_NPREDS):
+        """
+        Remove start and end of preds to ignore opening sequence of studio and end credits. Could refactor this to use
+        the saved credits_idx, but I don't think this has to be very accurate. This function can help if we
+        normalize predictions to be in [0,1] so that the beginning and end dips don't affect the range as much.
+        Removes start_npreds predictions from start, end_npreds predictions from end.
+        """
+        return preds[start_npreds:len(preds)-end_npreds]
+
+    def save_extrema_clips(extrema, tags, movie_path, movie, ext, verbose):
+        """
+        Extract clips from videos and save to folder
+
+        Parameters
+        -------
+        extrema: list of indices where extrema occur
+        tags: list of lists. tag[i] stores names for extrema i
+            - e.g. some extrema might be both audio-peak and visual-peak
+        movie_path: str -  path to movie
+        movie: str - title of video
+            - same title as in MoviePathDB, e.g. Frozen (2013)
+        ext: str - video extension, e.g. mp4
+        """
+
+        for i, extremum in enumerate(extrema):
+            # Get start and end time to extract
+            # Take int(extremum) because it could be a float if there was an overlap
+            start_time = CLIP_START_NPREDS + int(extremum) - (CLIP_LENGTH / 2)      # in seconds
+            end_time = CLIP_START_NPREDS + int(extremum) + (CLIP_LENGTH / 2)
+
+            # Get filename and path to save to
+            # Include i so that we can natsort and get clips in chronological order easily
+            cur_tags = '+'.join(tags[i])
+            start_str = get_timestamp_str(start_time)
+            end_str = get_timestamp_str(end_time)
+            out_fn = '{}_{}_{}_s{}_e{}_l{}{}'.format(movie, i, cur_tags, start_str, end_str, CLIP_LENGTH, ext)
+            out_path = os.path.join(out_dirpath, out_fn)
+
+            # Create and call command
+            cmd = ['ffmpeg', '-ss', str(start_time), '-t', str(CLIP_LENGTH), '-i', movie_path, '-vf', 'scale=640:-2',
+                   '-crf', '29', '-async', '1', out_path]
+            if overwrite:
+                cmd.insert(1, '-y')
+            if verbose:
+                subprocess.call(cmd, stdout=subprocess.PIPE)
+            else:
+                FNULL = open(os.devnull, 'wb')
+                subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+
+    # Main function starts here -- find all videos with predictions and movies
+    nvids = 0
+    start_run_time = time.time()
+    for root, dirs, files in os.walk(vids_dirpath):
+        if 'preds' in dirs:
+            viz_path = os.path.join(root, 'preds', VIZ_SENT_PRED_FN)
+            audio_path = os.path.join(root, 'preds', AUDIO_SENT_PRED_FN)
+            movie_file = find_movie_file(files)
+            movie = os.path.basename(root.rstrip('/'))
+            if os.path.exists(viz_path) and os.path.exists(audio_path) and movie_file:
+                vid_start_run_time = time.time()
+                if verbose:
+                    print '=' * 100
+                    print '=' * 100
+                    print '=' * 100
+                else:
+                    print '=' * 100
+                print 'Found data for {}'.format(root)
+
+                # Get some info
+                fn, ext = os.path.splitext(movie_file)
+                movie_path = os.path.join(root, movie_file)
+
+                # Skip if extension isn't mp4
+                if ext not in ['.mp4', '.MP4']:
+                    print 'Skipping -- extension is {}, not mp4'.format(ext)
+                    continue
+
+                # Skip videos that aren't as wide as desired width (mostly avi's probably)
+                cmd = 'ffprobe -v error -of flat=s=_ -select_streams v:0 -show_entries stream=width,height'.split(' ') + [movie_path]
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+                out, err = proc.communicate()           # 'streams_stream_0_width=1280\nstreams_stream_0_height=568\n'
+                m = re.match(r'.+width=([0-9]+)\n.+', out)
+                if (m is None) or (int(m.group(1)) < OUT_WIDTH):
+                    print 'Skipping - video width is {}, less than {}'.format(m.group(1), OUT_WIDTH)
+                    continue
+
+                # Get peaks
+                # Minor to-do: column names / number of columns should be put in core/utils/utils.py GLOBALS?
+                viz_preds = range_norm(filter_ends(smooth(pd.read_csv(viz_path).pos.values, window_len=WINDOW_LEN)))
+                viz_peaks = detect_peaks(viz_preds, mpd=MPD, mph=MPH, edge=None, show=SHOW_EXTREMA)
+                viz_valleys = detect_peaks(viz_preds, mpd=MPD, mph=MPH-1.0, edge=None, valley=True, show=SHOW_EXTREMA)
+                audio_preds = range_norm(filter_ends(smooth(pd.read_csv(audio_path).Valence.values, window_len=WINDOW_LEN)))
+                audio_peaks = detect_peaks(audio_preds, mpd=MPD, mph=MPH, edge=None, show=SHOW_EXTREMA)
+                audio_valleys = detect_peaks(audio_preds, mpd=MPD, mph=MPH-1.0, edge=None, valley=True, show=SHOW_EXTREMA)
+
+                # Merge, dedup, tag, etc. extrema
+                extrema, tags = merge_extrema([viz_peaks, viz_valleys, audio_peaks, audio_valleys],
+                                              ['visual', 'visual', 'audio', 'audio'],
+                                              ['peak', 'valley', 'peak', 'valley'])
+
+                # TODO: skip if number of extrema too low or too high?
+
+                # Make directory to store highlight clips
+                out_dirpath = os.path.join(HIGHLIGHTS_PATH, movie)
+                if os.path.exists(out_dirpath):
+                    if overwrite:
+                        shutil.rmtree(out_dirpath)
+                        os.mkdir(out_dirpath)
+                    else:
+                        print 'Skipping -- overwrite=false, highlights directory for movie already exists'
+                        continue
+                else:
+                    os.mkdir(out_dirpath)
+                print 'Saving clips to {}'.format(out_dirpath)
+
+                # Save each highlight clip
+                save_extrema_clips(extrema, tags, movie_path, movie, ext, verbose)
+
+                nvids += 1
+
+                # Stats
+                print 'Done extracting {} clips:'.format(len(extrema))
+                print 'Time elapsed for video: {:.2f} seconds'.format(time.time() - vid_start_run_time)
+                print 'Extracted clips from {} videos'.format(nvids)
+
+
+    print 'Total run time: {}'.format(time.time() - start_run_time)
 
 ########################################################################################################################
 # VideoPath DB
@@ -475,12 +869,17 @@ if __name__ == '__main__':
     parser.add_argument('--save_credits_index', dest='save_credits_index', action='store_true')
     parser.add_argument('--save_credits_index_overwrite', dest='save_credits_index_overwrite', default=False,
                         action='store_true', help='overwrite credits_index.txt files')
+    parser.add_argument('--extract_highlight_clips', dest='extract_highlight_clips', action='store_true')
+    parser.add_argument('--overwrite_clips', dest='overwrite_clips', action='store_true')
+    parser.add_argument('--verbose', dest='verbose', action='store_true')
     parser.add_argument('--create_videopath_db', dest='create_videopath_db', action='store_true')
     parser.add_argument('--match_film_metadata', dest='match_film_metadata', action='store_true')
     parser.add_argument('--get_shorts_metadata', dest='get_shorts_metadata', action='store_true')
     parser.add_argument('--create_videometadata_db', dest='create_videometadata_db', action='store_true')
     parser.add_argument('--vids_dir', dest='vids_dir', default=None,
                         help='folder that contains dirs (one movie each), e.g. films/MovieQA_full_movies')
+    parser.add_argument('--vids_dirpath', dest='vids_dirpath', default=None,
+                        help='folder that contains movies, e.g. data/videos/films/')
 
     cmdline = parser.parse_args()
 
@@ -490,6 +889,8 @@ if __name__ == '__main__':
         convert_avis_to_mp4s(cmdline.vids_dir)
     elif cmdline.save_credits_index:
         save_credits_index(cmdline.vids_dir, overwrite_files=cmdline.save_credits_index_overwrite)
+    elif cmdline.extract_highlight_clips:
+        extract_highlight_clips(cmdline.vids_dirpath, cmdline.overwrite_clips, cmdline.verbose)
     elif cmdline.create_videopath_db:
         create_videopath_db()
     elif cmdline.match_film_metadata:

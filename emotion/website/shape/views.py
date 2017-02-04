@@ -15,17 +15,13 @@ import pickle
 
 from shape import app
 from core.predictions.utils import smooth, DTWDistance
-from core.utils.utils import get_credits_idx
+from core.utils.utils import get_credits_idx, AUDIO_SENT_PRED_FN, VIZ_SENT_PRED_FN
 
 ###### PATHS, ETC.
 FORMATS = ['films', 'shorts', 'ads']
 
 VIDEOS_PATH = 'shape/static/videos/'
 OUTPUTS_DATA_PATH = 'shape/outputs/cluster/data/'
-
-# For One Video view - (if else for local vs shannon)
-VIZ_PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
-AUDIO_PRED_FN = 'audio-valence_reg_4.csv'
 
 # For Clusters view:
 TS_FN = \
@@ -165,13 +161,13 @@ def get_cur_vid_df_and_framepaths(cur_title):
     global title2vidpath, cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths
 
     # Get dataframe
-    viz_preds_path = os.path.join(title2vidpath[cur_title], 'preds', VIZ_PRED_FN)
+    viz_preds_path = os.path.join(title2vidpath[cur_title], 'preds', VIZ_SENT_PRED_FN)
     if os.path.exists(viz_preds_path):
         cur_viz_pd_df = pd.read_csv(viz_preds_path)
     else:
         cur_viz_pd_df = None
 
-    audio_preds_path = os.path.join(title2vidpath[cur_title], 'preds', AUDIO_PRED_FN)
+    audio_preds_path = os.path.join(title2vidpath[cur_title], 'preds', AUDIO_SENT_PRED_FN)
     if os.path.exists(audio_preds_path):
         print audio_preds_path
         cur_audio_pd_df = pd.read_csv(audio_preds_path)

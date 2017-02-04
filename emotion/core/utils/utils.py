@@ -18,6 +18,10 @@ VID_EXTS = ['webm', 'mkv', 'flv', 'vob', 'ogv', 'ogg', 'drc', 'gif', 'gifv', 'mn
                 'm4v', 'svi', '3gp', '3g2', 'mxf', 'roq', 'nsv', 'flv', 'f4v', 'f4p', 'f4a', 'f4b']
 VID_EXTS += [fmt.upper() for fmt in VID_EXTS]
 
+# These are the files to use for emotional curve prediction
+VIZ_SENT_PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
+AUDIO_SENT_PRED_FN = 'audio-valence_reg_4.csv'
+
 ########################################################################################################################
 # Neural network - Set up, boilerplate, etc.
 ########################################################################################################################
