@@ -7,10 +7,11 @@ import numpy as np
 import os
 import tensorflow as tf
 
-from prepare_data import MELGRAM_30S_SIZE
+from prepare_data import MELGRAM_30S_SIZE, NUMPTS_AND_MEANSTD_REG_PATH, NUMPTS_AND_MEANSTD_CLASS_PATH, \
+    VALENCE_CLASS_THRESHOLD
+
 
 TFRECORDS_PATH = 'data/spotify/tfrecords'
-NUMPTS_AND_MEANSTD_PATH = 'data/spotify/numpts_and_meanstd.pkl'
 MELGRAM_20S_SIZE = [96, 938]
 
 #######################################################################################################################
@@ -33,6 +34,9 @@ class Dataset(object):
         if self.params['obj'] == 'valence_reg':
             self.label_dtype = tf.float32
             self.output_dim = 1
+        elif self.params['obj'] == 'valence_class':
+            self.label_dtype = tf.int32
+            self.output_dim = 2
 
     ####################################################################################################################
     # Basic getters for public
@@ -62,7 +66,12 @@ class SpotifyDataset(Dataset):
         Load the pre-computed number of points per train-valid-test split and per mel-bin mean and stddev so we can
         normalize data.
         """
-        numpts_and_meanstd = pickle.load(open(NUMPTS_AND_MEANSTD_PATH, 'rb'))
+        numpts_and_meanstd = None
+        if self.params['obj'] == 'valence_reg':
+            numpts_and_meanstd = pickle.load(open(NUMPTS_AND_MEANSTD_REG_PATH, 'rb'))
+        elif self.params['obj'] == 'valence_class':
+            numpts_and_meanstd = pickle.load(open(NUMPTS_AND_MEANSTD_CLASS_PATH, 'rb'))
+
         for split in ['train', 'valid', 'test']:
             self.num_pts[split] = numpts_and_meanstd['num_pts'][split]
         self.mean = numpts_and_meanstd['mean']      # (number of mel-bins, 1)
@@ -77,6 +86,7 @@ class SpotifyDataset(Dataset):
     ####################################################################################################################
     def get_tfrecords_files_list(self):
         """Return list of tfrecord files"""
+        files_list = None
         if self.params['mode'] == 'train':
             files_list = {}
             if self.params['debug']:
@@ -101,7 +111,13 @@ class SpotifyDataset(Dataset):
         files_list = []
 
         # Iterate through directory, extract labels from biconcept
-        tfrecords_dir = os.path.join(self.__cwd__, TFRECORDS_PATH)
+        tfrecords = None
+        if self.params['obj'] == 'valence_reg':
+             tfrecords = TFRECORDS_PATH
+        elif self.params['obj'] == 'valence_class':
+            tfrecords = 'data/spotify/tfrecords_valence_class'
+
+        tfrecords_dir = os.path.join(self.__cwd__, tfrecords)
         split_dir = os.path.join(tfrecords_dir, split_name)
         for f in [f for f in os.listdir(split_dir) if not f.startswith('.')]:
             tfrecord_path = os.path.join(tfrecords_dir, split_name, f)
@@ -134,13 +150,28 @@ class SpotifyDataset(Dataset):
         """
         reader = tf.TFRecordReader()
         _, serialized_example = reader.read(input_queue)
-        features = tf.parse_single_example(
-            serialized_example,
-            features={
-                'id': tf.FixedLenFeature([], tf.string),
-                'log_melgram': tf.FixedLenFeature([], tf.string),
-                'valence_reg': tf.FixedLenFeature([], tf.float32)
-            })
+
+        features = None
+        label = None
+        if self.params['obj'] == 'valence_reg':
+            features = tf.parse_single_example(
+                serialized_example,
+                features={
+                    'id': tf.FixedLenFeature([], tf.string),
+                    'log_melgram': tf.FixedLenFeature([], tf.string),
+                    'valence_reg': tf.FixedLenFeature([], tf.float32)
+                })
+            label = features[self.params['obj']]
+        elif self.params['obj'] == 'valence_class':
+            features = tf.parse_single_example(
+                serialized_example,
+                features={
+                    'id': tf.FixedLenFeature([], tf.string),
+                    'log_melgram': tf.FixedLenFeature([], tf.string),
+                    'valence_class': tf.FixedLenFeature([], tf.int64)
+                })
+            label = features[self.params['obj']]
+            label = tf.cast(label, tf.int32)
 
         # feats = tf.decode_raw(features['log_melgram'], tf.float64)
         feats = tf.decode_raw(features['log_melgram'], tf.float32)
@@ -150,8 +181,6 @@ class SpotifyDataset(Dataset):
         feats.set_shape(MELGRAM_30S_SIZE)
         feats = self.preprocess_feats(feats)
         feats = tf.expand_dims(feats, 2)        # (batch, mel-bins, time) -> (batch, mel-bins, time, 1)
-
-        label = features[self.params['obj']]
 
         return feats, label
 
@@ -166,6 +195,7 @@ class SpotifyDataset(Dataset):
             clip_label_list = [self.read_and_decode(input_queue) for _ in range(num_read_threads)]
         min_after_dequeue = 10000
         capacity = min_after_dequeue + 3 * self.params['batch_size']
+
         clip_batch, label_batch = tf.train.shuffle_batch_join(
             clip_label_list,
             batch_size=self.params['batch_size'],

@@ -11,7 +11,7 @@ import time
 
 from core.audio.AudioCNN import AudioCNN
 from core.utils.utils import get_optimizer, load_model, save_model, setup_logging
-from datasets import get_dataset, MELGRAM_20S_SIZE, NUMPTS_AND_MEANSTD_PATH
+from datasets import get_dataset, MELGRAM_20S_SIZE, NUMPTS_AND_MEANSTD_REG_PATH, NUMPTS_AND_MEANSTD_CLASS_PATH
 from prepare_data import compute_log_melgram_from_np, N_FFT, N_MELS, HOP_LEN
 
 class Network(object):
@@ -25,7 +25,7 @@ class Network(object):
         """Train"""
         self.dataset = get_dataset(self.params)
         self.logger = self._get_logger()
-        # self.output_dim = self.dataset.get_output_dim()
+        self.output_dim = self.dataset.get_output_dim()
         with tf.Session() as sess:
             # Get data
             self.logger.info('Retrieving training data and setting up graph')
@@ -33,7 +33,7 @@ class Network(object):
             tr_clip_batch, self.tr_label_batch = splits['train']['clip_batch'], splits['train']['label_batch']
             va_clip_batch, va_label_batch = splits['valid']['clip_batch'], splits['valid']['label_batch']
 
-            # # Get model
+            # Get model
             model = self._get_model(sess, tr_clip_batch, self.params['bn_decay'], is_training=True)
 
             # Loss
@@ -65,10 +65,18 @@ class Network(object):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_tr_batches = self.dataset.get_num_batches('train')
                 for j in range(num_tr_batches):
-                    _, imgs, out, loss_val, summary = sess.run(
-                        [train_step, tr_clip_batch, model.out, self.loss, summary_op])
+                    if self.params['obj'] == 'valence_reg':
+                        _, imgs, out, loss_val, summary = sess.run(
+                            [train_step, tr_clip_batch, model.out, self.loss, summary_op])
 
-                    self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
+                        self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
+
+                    elif self.params['obj'] == 'valence_class':
+                        _, imgs, out, loss_val, acc_val, summary = sess.run(
+                            [train_step, tr_clip_batch, model.out, self.loss, self.acc, summary_op])
+
+                        self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
+                        self.logger.info('................... -- Acc: {}'.format(acc_val))
 
                     # Write summary
                     if j % 10 == 0:
@@ -86,15 +94,26 @@ class Network(object):
                     num_va_batches = self.dataset.get_num_batches('valid')
                     for j in range(num_va_batches):
                         clip_batch, label_batch = sess.run([va_clip_batch, va_label_batch])
-                        loss_val, loss_summary = sess.run(
-                            [self.loss, self.loss_summary],
-                            feed_dict={'clip_batch:0': clip_batch, 'label_batch:0': label_batch})
+                        if self.params['obj'] == 'valence_reg':
+                            loss_val, summary = sess.run(
+                                [self.loss, summary_op],
+                                feed_dict={'clip_batch:0': clip_batch, 'label_batch:0': label_batch})
 
-                        self.logger.info('Valid minibatch {} / {} -- Loss: {}'.format(j, num_va_batches, loss_val))
+                            self.logger.info('Valid minibatch {} / {} -- Loss: {}'.format(j, num_va_batches, loss_val))
+
+                        elif self.params['obj'] == 'valence_class':
+                            loss_val, acc_val, summary = sess.run(
+                                [self.loss, self.acc, summary_op],
+                                feed_dict={'clip_batch:0': clip_batch, 'label_batch:0': label_batch})
+
+                            self.logger.info('Valid minibatch {} / {} -- Loss: {}'.format(j, num_va_batches, loss_val))
+                            self.logger.info('................... -- Acc: {}'.format(acc_val))
+
 
                         # Write summary
                         if j % 10 == 0:
-                            va_summary_writer.add_summary(loss_summary, i * num_tr_batches + j)
+                            # va_summary_writer.add_summary(loss_summary, i * num_tr_batches + j)
+                            va_summary_writer.add_summary(summary, i * num_tr_batches + j)
 
                 # Save model at end of epoch (potentially)
                 save_model(sess, saver, self.params, i, self.logger)
@@ -109,7 +128,7 @@ class Network(object):
         """Test"""
         self.dataset = get_dataset(self.params)
         self.logger = self._get_logger()
-        # self.output_dim = self.dataset.get_output_dim()
+        self.output_dim = self.dataset.get_output_dim()
         with tf.Session() as sess:
             # Get data
             self.logger.info('Getting test set')
@@ -142,9 +161,28 @@ class Network(object):
             # print sess.run(tf.trainable_variables()[0])
 
             # Test
+            overall_loss = 0
+            overall_correct = 0
+            overall_num = 0
             for j in range(num_batches):
-                fc, out, loss_val, summary = sess.run([model.fc, model.out, self.loss, summary_op])
-                self.logger.info('Test minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
+                if self.params['obj'] == 'valence_reg':
+                    fc, out, loss_val, summary = sess.run([model.fc, model.out, self.loss, summary_op])
+                    overall_loss += loss_val
+                    self.logger.info('Test minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
+                elif self.params['obj'] == 'valence_class':
+                    fc, out, loss_val, acc_val, summary = sess.run([model.fc, model.out, self.loss, self.acc, summary_op])
+                    overall_loss += loss_val
+                    overall_correct += int(acc_val * te_clip_batch.get_shape().as_list()[0])
+                    overall_num += te_clip_batch.get_shape().as_list()[0]
+                    self.logger.info('Test minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
+                    self.logger.info('................... -- Acc: {}'.format(acc_val))
+
+
+                self.logger.info('..........overall loss so far: {}'.format(overall_loss / float(j+1)))
+                self.logger.info('..........overall acc so far: {}'.format(overall_correct / float(overall_num)))
+
+            self.logger.info('Overall loss: {}'.format(overall_loss / float(num_batches)))
+            self.logger.info('Overall acc: {}'.format(overall_correct / float(overall_num)))
 
                 # print fc, out
                 # Write summary
@@ -172,9 +210,19 @@ class Network(object):
                     mp3paths.append(os.path.join(root, f))
         return mp3paths
 
+    def softmax(self, w, t = 1.0):
+        e = np.exp(np.array(w) / t)
+        dist = e / np.sum(e)
+        return dist
+
     def predict(self):
         """Predict"""
         self.logger = self._get_logger()
+        self.output_dim = None
+        if self.params['obj'] == 'valence_reg':
+            self.output_dim = 1
+        elif self.params['obj'] == 'valence_class':
+            self.output_dim = 2
 
         # If given path contains an mp3 file, just predict for that one video
         # Else walk through directory and predict for every folder that contains an mp3 file
@@ -251,8 +299,10 @@ class Network(object):
                     fc, outs = sess.run([model.fc, model.out], feed_dict={'clip_batch:0': cur_batch})
 
                     if self.params['debug']:
-                        # print fc, outs
+                        print fc
+                        print self.softmax(fc[0])
                         print outs
+                        return
 
                     batch_start_s = (j * self.params['batch_size'] * self.params['stride'])      # second
                     for k, out in enumerate(outs):
@@ -260,7 +310,10 @@ class Network(object):
                         for rel_s in range(melgram_nsec):
                             cur_s = cur_melgram_s + rel_s
                             # print batch_start_s, cur_melgram_s, rel_s, cur_s
-                            s2preds[cur_s].append(out[0])
+                            if self.params['obj'] == 'valence_reg':
+                                s2preds[cur_s].append(out[0])
+                            elif self.params['obj'] == 'valence_class':
+                                s2preds[cur_s].append(self.softmax(fc[0])[1])  # 1 for positive
 
                 with open(os.path.join(preds_dir, fn), 'wb') as f:
                     f.write('Valence\n')
@@ -298,8 +351,8 @@ class Network(object):
         self.logger.info('Making {} model'.format(self.params['arch']))
         if self.params['arch'] == 'cnn':
             model = AudioCNN(
-                # output_dim=self.output_dim,
                 clips=clip_batch,
+                output_dim=self.output_dim,
                 bn_decay=bn_decay,
                 is_training=is_training)
 
@@ -309,11 +362,35 @@ class Network(object):
         label_batch = self.tr_label_batch if self.params['mode'] == 'train' else self.te_label_batch
         label_batch_op = tf.placeholder_with_default(label_batch, shape=[self.params['batch_size']],
                                                      name='label_batch')
-        self.loss = tf.sqrt(tf.reduce_mean(tf.square(tf.sub(model.out, label_batch_op))))
+
+        # Regression
+        if self.params['obj'] == 'valence_reg':
+            if self.params['reg_loss'] == 'RMSE':
+                self.loss = tf.sqrt(tf.reduce_mean(tf.square(tf.sub(model.out, label_batch_op))))
+            elif self.params['reg_loss'] == 'L1':
+                self.loss = tf.reduce_mean(tf.abs(tf.sub(model.out, label_batch_op)))
+            elif self.params['reg_loss'] == 'huber':
+                self.loss = tf.cond(tf.reduce_mean(tf.abs(tf.sub(model.out, label_batch_op))) < 0.5,
+                                    lambda: 0.5 * tf.reduce_mean(tf.square(tf.sub(model.out, label_batch_op))),
+                                    lambda: (0.5 * tf.reduce_mean(tf.abs(tf.sub(model.out, label_batch_op)))) - 0.125)
+
+        # Classification
+        elif self.params['obj'] == 'valence_class':
+            logits = model.fc
+            labels_onehot = tf.one_hot(label_batch_op, self.output_dim)     # (batch_size, num_classes)
+            self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits, labels_onehot))
+
+            # Accuracy
+            acc = tf.equal(tf.cast(tf.argmax(model.fc, 1), tf.int32), label_batch_op)
+            self.acc = tf.reduce_mean(tf.cast(acc, tf.float32))
+
 
     def _get_summary_ops(self):
         """Define summaries and return summary_op"""
         self.loss_summary = tf.summary.scalar('loss', self.loss)
+
+        if self.params['obj'] == 'valence_class':    # classification, thus has accuracy
+            self.acc_summary = tf.summary.scalar('accuracy', self.acc)
 
         # Weights and gradients. TODO: why doesn't this work for test? Type error
         for var in tf.trainable_variables():
@@ -336,7 +413,12 @@ class Network(object):
         Load the pre-computed number of points per train-valid-test split and per mel-bin mean and stddev so we can
         normalize data.
         """
-        numpts_and_meanstd = pickle.load(open(NUMPTS_AND_MEANSTD_PATH, 'rb'))
+        numpts_and_meanstd = None
+        if self.params['obj'] == 'valence_reg':
+            numpts_and_meanstd = pickle.load(open(NUMPTS_AND_MEANSTD_REG_PATH, 'rb'))
+        elif self.params['obj'] == 'valence_class':
+            numpts_and_meanstd = pickle.load(open(NUMPTS_AND_MEANSTD_CLASS_PATH, 'rb'))
         mean = numpts_and_meanstd['mean']      # (number of mel-bins, 1)
         std = numpts_and_meanstd['std']        # (number of mel-bins, 1)
+
         return mean, std

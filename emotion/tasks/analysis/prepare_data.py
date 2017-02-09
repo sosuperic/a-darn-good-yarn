@@ -46,13 +46,16 @@ VIDEOMETADATA_DB = 'data/db/VideoMetadata.pkl'
 ########################################################################################################################
 # Frames
 ########################################################################################################################
-def save_video_frames(vids_dir):
+def save_video_frames(vids_dir, sr):
     """
     Loop over subdirs within vids_dir and save frames to subdir/frames/
 
     Parameters
     ----------
     vids_dir: directory within VIDEOS_PATH that contains sub-directories, each which may contain a movie
+        e.g. films/animated/
+        TODO: refactor this to os.walk, so you can just pass in data/videos/...
+    sr: float - sample rate (e.g. 1 means take a frame at every second)
     """
 
     # vid_exts = ['mp4', 'avi']
@@ -94,7 +97,7 @@ def save_video_frames(vids_dir):
             print 'Format: {}'.format(vid_ext)
             movie_path = os.path.join(vid_dirpath, movie_file)
             try:
-                mr.write_frames(movie_path)
+                mr.write_frames(movie_path, sample_rate_in_sec=sr)
                 i += 1
                 successes.append(vid_name)
                 # TODO: should check number of frames -- sometimes only a few saved, there's an error going through file
@@ -498,6 +501,13 @@ def extract_highlight_clips(vids_dirpath, overwrite, verbose):
                 # Get some info
                 fn, ext = os.path.splitext(movie_file)
                 movie_path = os.path.join(root, movie_file)
+                out_dirpath = os.path.join(HIGHLIGHTS_PATH, movie)
+
+                # Skip if not overwriting and highlights already exists
+                if os.path.exists(out_dirpath):
+                    if not overwrite:
+                        print 'Skipping -- overwrite=false, highlights directory for movie already exists'
+                        continue
 
                 # Skip if extension isn't mp4
                 if ext not in ['.mp4', '.MP4']:
@@ -513,7 +523,21 @@ def extract_highlight_clips(vids_dirpath, overwrite, verbose):
                     print 'Skipping - video width is {}, less than {}'.format(m.group(1), OUT_WIDTH)
                     continue
 
+                # Make directory to store highlight clips (if it doesn't already exist)
+                if os.path.exists(out_dirpath):
+                    # If it reaches this point, overwrite should always be true
+                    # Leaving this if here for clarity
+                    # The skipping if not overwrite is placed further up in the code to short-circuit earlier,
+                    # and not create a directory if it's skipped because of extension of width reasons
+                    if overwrite:
+                        shutil.rmtree(out_dirpath)
+                        os.mkdir(out_dirpath)
+                else:
+                    os.mkdir(out_dirpath)
+                print 'Saving clips to {}'.format(out_dirpath)
+
                 # Get peaks
+                # TODO: skip if number of extrema too low or too high?
                 # Minor to-do: column names / number of columns should be put in core/utils/utils.py GLOBALS?
                 viz_preds = range_norm(filter_ends(smooth(pd.read_csv(viz_path).pos.values, window_len=WINDOW_LEN)))
                 viz_peaks = detect_peaks(viz_preds, mpd=MPD, mph=MPH, edge=None, show=SHOW_EXTREMA)
@@ -526,21 +550,6 @@ def extract_highlight_clips(vids_dirpath, overwrite, verbose):
                 extrema, tags = merge_extrema([viz_peaks, viz_valleys, audio_peaks, audio_valleys],
                                               ['visual', 'visual', 'audio', 'audio'],
                                               ['peak', 'valley', 'peak', 'valley'])
-
-                # TODO: skip if number of extrema too low or too high?
-
-                # Make directory to store highlight clips
-                out_dirpath = os.path.join(HIGHLIGHTS_PATH, movie)
-                if os.path.exists(out_dirpath):
-                    if overwrite:
-                        shutil.rmtree(out_dirpath)
-                        os.mkdir(out_dirpath)
-                    else:
-                        print 'Skipping -- overwrite=false, highlights directory for movie already exists'
-                        continue
-                else:
-                    os.mkdir(out_dirpath)
-                print 'Saving clips to {}'.format(out_dirpath)
 
                 # Save each highlight clip
                 save_extrema_clips(extrema, tags, movie_path, movie, ext, verbose)
@@ -865,6 +874,7 @@ if __name__ == '__main__':
     # Set up commmand line arguments
     parser = argparse.ArgumentParser(description='Download and process data')
     parser.add_argument('--save_video_frames', dest='save_video_frames', action='store_true')
+    parser.add_argument('--save_video_frames_sr', dest='save_video_frames_sr', type=float, default=1)
     parser.add_argument('--convert_avis_to_mp4s', dest='convert_avis_to_mp4s', action='store_true')
     parser.add_argument('--save_credits_index', dest='save_credits_index', action='store_true')
     parser.add_argument('--save_credits_index_overwrite', dest='save_credits_index_overwrite', default=False,
@@ -884,7 +894,7 @@ if __name__ == '__main__':
     cmdline = parser.parse_args()
 
     if cmdline.save_video_frames:
-        save_video_frames(cmdline.vids_dir)
+        save_video_frames(cmdline.vids_dir, cmdline.save_video_frames_sr)
     elif cmdline.convert_avis_to_mp4s:
         convert_avis_to_mp4s(cmdline.vids_dir)
     elif cmdline.save_credits_index:

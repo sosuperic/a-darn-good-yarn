@@ -33,7 +33,9 @@ SPOTIFY_PREVIEWS_PATH = 'data/spotify/previews/'
 SONGS_PER_FOLDER = 100   # 26 * 26 * 26 * 75 = 1757600
 
 MELGRAM_30S_SIZE = (96, 1407)
-NUMPTS_AND_MEANSTD_PATH = 'data/spotify/numpts_and_meanstd.pkl'
+NUMPTS_AND_MEANSTD_REG_PATH = 'data/spotify/numpts_and_meanstd_reg.pkl'
+NUMPTS_AND_MEANSTD_CLASS_PATH = 'data/spotify/numpts_and_meanstd_class.pkl'
+VALENCE_CLASS_THRESHOLD = 0.25      # less than <val> is negative for classification, greater than 1-<val> is positive
 
 # Mel-spectrogram parameters
 N_FFT = 512
@@ -677,10 +679,10 @@ def compute_log_melgram_from_np(src, dur, sr, hop_len, n_fft, n_mels):
 #     ret = ret[np.newaxis, np.newaxis, :]
     return ret
 
-def precompute_numpts_and_meanstd_from_tfrecords():
+def precompute_numpts_and_meanstd_reg():
     """
     From the tfrecords, calculate a) number of pts per train-valid-test split, and b) the per mel-bin mean and
-    stddev. This will be loaded and used in datasets.py.
+    stddev. For the regression task. This will be loaded and used in datasets.py.
     """
     # Add counts. TODO: this is slow (not a huge deal considering it's a one-time setup), but still...
     numpts_and_meanstd = {}
@@ -691,9 +693,6 @@ def precompute_numpts_and_meanstd_from_tfrecords():
         std = np.zeros(MELGRAM_30S_SIZE[0])         # (num mel-bins, )
         dirpath = os.path.join(SPOTIFY_PATH, 'tfrecords', split)
         for tfrecord in os.listdir(dirpath):
-            # if tfrecord.startswith('HP'):          # Used to test while still saving tfrecords
-            #     continue
-
             tfrecord_path = os.path.join(dirpath, tfrecord)
             for record in tf.python_io.tf_record_iterator(tfrecord_path):
                 n += 1
@@ -721,7 +720,61 @@ def precompute_numpts_and_meanstd_from_tfrecords():
             numpts_and_meanstd['std'] = std
 
     # Save
-    with open(NUMPTS_AND_MEANSTD_PATH, 'wb') as f:
+    with open(NUMPTS_AND_MEANSTD_REG_PATH, 'wb') as f:
+        pickle.dump(numpts_and_meanstd, f, protocol=2)
+
+    print numpts_and_meanstd['num_pts']
+
+def precompute_numpts_and_meanstd_class():
+    """
+    From the tfrecords, calculate a) number of pts per train-valid-test split, and b) the per mel-bin mean and
+    stddev. For the classification task. This will be loaded and used in datasets.py.
+    """
+    # Add counts. TODO: this is slow (not a huge deal considering it's a one-time setup), but still...
+    numpts_and_meanstd = {}
+    numpts_and_meanstd['num_pts'] = {}
+    for split in ['train', 'valid', 'test']:
+        n = 0
+        mean = np.zeros(MELGRAM_30S_SIZE[0])        # (num mel-bins, )
+        std = np.zeros(MELGRAM_30S_SIZE[0])         # (num mel-bins, )
+        dirpath = os.path.join(SPOTIFY_PATH, 'tfrecords', split)
+        for tfrecord in os.listdir(dirpath):
+            tfrecord_path = os.path.join(dirpath, tfrecord)
+            for record in tf.python_io.tf_record_iterator(tfrecord_path):
+
+                example = tf.train.Example()
+                example.ParseFromString(record)
+
+                # Skip if valence is 'neutral'
+                valence = example.features.feature['valence_reg'].float_list.value[0]
+                if (valence > VALENCE_CLASS_THRESHOLD) and (valence < (1-VALENCE_CLASS_THRESHOLD)):
+                    continue
+
+                # Update n for numpts and moving average of mean and stddev
+                n += 1
+
+                # Only calculate mean and std based on train
+                if split == 'train':
+                    log_melgram_str = (example.features.feature['log_melgram'].bytes_list.value[0])
+                    log_melgram = np.fromstring(log_melgram_str, dtype=np.float32)
+                    # print log_melgram.shape[0] / 96
+                    log_melgram = log_melgram.reshape(MELGRAM_30S_SIZE)
+
+                    # Update moving average of mean and std
+                    # New average = old average * (n-1)/n + new value /n
+                    mean = mean * (n-1)/n + log_melgram.mean(axis=1) / n
+                    std = std * (n-1)/n + log_melgram.std(axis=1) / n
+
+        numpts_and_meanstd['num_pts'][split] = n
+
+        if split == 'train':
+            mean = np.expand_dims(mean, 1)      # (num mel-bins, ) -> (num mel-bins, 1)
+            std = np.expand_dims(std, 1)        # (num mel-bins, ) -> (num mel-bins, 1)
+            numpts_and_meanstd['mean'] = mean
+            numpts_and_meanstd['std'] = std
+
+    # Save
+    with open(NUMPTS_AND_MEANSTD_CLASS_PATH, 'wb') as f:
         pickle.dump(numpts_and_meanstd, f, protocol=2)
 
     print numpts_and_meanstd['num_pts']
@@ -766,8 +819,6 @@ def modify_tfrecords():
                 log_melgram = log_melgram.astype(np.float32, copy=False)
                 log_melgram_str = log_melgram.tostring()
 
-                # print log_melgram.shape[0] / 96
-
                 # Get id to get more audio features
                 track_id = example.features.feature['id'].bytes_list.value[0].split('-')[1]
                 cur_af = af[track_id]
@@ -793,6 +844,46 @@ def modify_tfrecords():
             # Replace old with modified
             os.system('rm {}'.format(tfrecord_path))
             os.system('mv {} {}'.format(tfrecord_path + '.modified', tfrecord_path))
+
+def write_tfrecords_valence_class():
+    """
+    Load existing tfrecords, create new tfrecord for positve and negative class examples.
+
+    NOTE: this is redudant, and is taking up disk space. Shouldn't be necessary
+    once tf upgraded to 1.0, after which we can use tf.train.maybe_shuffle_batch_join, which takes a predicate to
+    filter examples.
+    """
+    def _bytes_feature(value):
+        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+    def _int64_feature(value):
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+
+    for split in ['train', 'valid', 'test']:
+        dirpath = os.path.join(SPOTIFY_PATH, 'tfrecords', split)
+        for tfrecord in os.listdir(dirpath):
+            print '{} -- {}'.format(split, tfrecord)
+            tfrecord_path = os.path.join(dirpath, tfrecord)
+            out_path = os.path.join(SPOTIFY_PATH, 'tfrecords_valence_class', split, tfrecord)
+            writer = tf.python_io.TFRecordWriter(out_path)
+            for record in tf.python_io.tf_record_iterator(tfrecord_path):
+                example = tf.train.Example()
+                example.ParseFromString(record)
+
+                # Skip if valence is 'neutral'
+                valence = example.features.feature['valence_reg'].float_list.value[0]
+                if (valence > VALENCE_CLASS_THRESHOLD) and (valence < (1-VALENCE_CLASS_THRESHOLD)):
+                    continue
+                valence_class_label = 0 if valence < VALENCE_CLASS_THRESHOLD else 1
+
+                new_ex = tf.train.Example(features=tf.train.Features(feature={
+                    'id': _bytes_feature(example.features.feature['id'].bytes_list.value[0]),
+                    'log_melgram': _bytes_feature(example.features.feature['log_melgram'].bytes_list.value[0]),
+                    'valence_class': _int64_feature(valence_class_label)
+                }))
+
+                writer.write(new_ex.SerializeToString())
+
 
 ########################################################################################################################
 # Extract audio for videos in order to predict audio-based emotional curves
@@ -876,7 +967,10 @@ if __name__ == '__main__':
     parser.add_argument('--clean_dld_previews', dest='clean_dld_previews', action='store_true')
     parser.add_argument('--write_spotify_to_tfrecords', dest='write_spotify_to_tfrecords', action='store_true')
     parser.add_argument('--modify_tfrecords', dest='modify_tfrecords', action='store_true')
-    parser.add_argument('--precompute_numpts_and_meanstd_from_tfrecords', dest='precompute_numpts_and_meanstd_from_tfrecords',
+    parser.add_argument('--write_tfrecords_valence_class', dest='write_tfrecords_valence_class', action='store_true')
+    parser.add_argument('--precompute_numpts_and_meanstd_reg', dest='precompute_numpts_and_meanstd_reg',
+                        action='store_true')
+    parser.add_argument('--precompute_numpts_and_meanstd_class', dest='precompute_numpts_and_meanstd_class',
                         action='store_true')
 
     parser.add_argument('--extract_audio_from_vids', dest='extract_audio_from_vids', action='store_true')
@@ -906,10 +1000,14 @@ if __name__ == '__main__':
         clean_dld_previews()
     elif cmdline.write_spotify_to_tfrecords:
         write_spotify_to_tfrecords()
-    elif cmdline.precompute_numpts_and_meanstd_from_tfrecords:
-        precompute_numpts_and_meanstd_from_tfrecords()
     elif cmdline.modify_tfrecords:
         modify_tfrecords()
+    elif cmdline.write_tfrecords_valence_class:
+        write_tfrecords_valence_class()
+    elif cmdline.precompute_numpts_and_meanstd_reg:
+        precompute_numpts_and_meanstd_reg()
+    elif cmdline.precompute_numpts_and_meanstd_class:
+        precompute_numpts_and_meanstd_class()
     elif cmdline.extract_audio_from_vids:
         extract_audio_from_vids(cmdline.vids_dirpath)
     elif cmdline.remove_bad_mp3s:

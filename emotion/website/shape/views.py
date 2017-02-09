@@ -211,11 +211,28 @@ def get_all_vidpaths_with_frames_and_preds():
     and c) frames/ directory has more than 0 frames. Starts walking in VIDEOS_PATH directory. Each full path is of the
     form '<VIDEOS_PATH>/@Animated/@OldDisney/Feast/'.
     """
+    def root_contains_valid_fmt(root):
+        for fmt in FORMATS:
+            if fmt in root:
+                return True
+        return False
+
+    def walk_dirpath(dirpath):
+        vidpaths = []
+        for root, dirs, files in os.walk(dirpath):
+            if not root_contains_valid_fmt(root):
+                continue
+
+            if ('frames' in os.listdir(root)) and ('preds' in os.listdir(root)) \
+                and (len(os.listdir(os.path.join(root, 'frames'))) > 0):
+                vidpaths.append(root)
+        return vidpaths
+
     vidpaths = []
-    for root, dirs, files in os.walk(VIDEOS_PATH):
-        if ('frames' in os.listdir(root)) and ('preds' in os.listdir(root)) \
-            and (len(os.listdir(os.path.join(root, 'frames'))) > 0):
-            vidpaths.append(root)
+    for fmt in FORMATS:
+        # print fmt, vidpaths
+        vidpaths.extend(walk_dirpath(os.path.join(VIDEOS_PATH, fmt)))
+
     return vidpaths
 
 def setup_initial_data():

@@ -25,7 +25,9 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--arch', dest='arch', default='cnn',
                         help='what architecture to use: cnn, rcnn')
     parser.add_argument('-obj', dest='obj', default='valence_reg',
-                        help='What to predict: valence_reg')
+                        help='What to predict: valence_reg,valence_class')
+    parser.add_argument('--reg_loss', dest='reg_loss', default='RMSE',
+                        help='loss to use for regression task: RMSE,L1,huber')
 
     # General training params
     parser.add_argument('-bs', '--batch_size', dest='batch_size', type=int, default=None, help='batch size')
@@ -35,7 +37,7 @@ if __name__ == '__main__':
     parser.add_argument('-lr', dest='lr', type=float, default=None, help='learning rate')
     parser.add_argument('--optim', dest='optim', default=None,
                         help='sgd,adadelta,adagrad,adam,rmsprop; optimziation method')
-    parser.add_argument('--bn_decay', dest='bn_decay', type=float)
+    parser.add_argument('--bn_decay', dest='bn_decay', type=float, default=0.9)
     parser.add_argument('--momentum', dest='momentum', type=float, default=None, help='momentum')
     parser.add_argument('--weight_decay', dest='weight_decay', type=float, default=None, help='weight decay')
 

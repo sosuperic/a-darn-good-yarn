@@ -141,4 +141,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
  
     mr = MovieReader()
-    mr.write_frames(args.input_path, args.output_dir, int(args.sample_rate_in_sec), args.target_w, args.target_h)
+    mr.write_frames(args.input_path, args.output_dir, float(args.sample_rate_in_sec), args.target_w, args.target_h)

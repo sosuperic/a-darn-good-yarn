@@ -6,9 +6,12 @@ from datasets import MELGRAM_20S_SIZE
 import tensorflow as tf
 
 class AudioCNN(object):
-    def __init__(self, clips, bn_decay=None, is_training=None):
+    def __init__(self, clips=None, output_dim=None, bn_decay=None, is_training=None):
         self.clips = clips
         self.batch_size = self.clips.get_shape().as_list()[0]        # variable sized batch
+        # print self.batch_size
+        # self.batch_size = tf.shape(clips)[0]
+        self.output_dim = output_dim
         self.bn_decay = bn_decay
         self.is_training = is_training
 
@@ -17,6 +20,8 @@ class AudioCNN(object):
         self.clips_batch = tf.placeholder_with_default(
             self.clips,
             shape=[self.batch_size, MELGRAM_20S_SIZE[0], MELGRAM_20S_SIZE[1], 1],
+            # shape=[None, MELGRAM_20S_SIZE[0], MELGRAM_20S_SIZE[1], 1],
+            # shape = tf.concat(0, [self.batch_size,  [MELGRAM_20S_SIZE[0], MELGRAM_20S_SIZE[1], 1]]),
             name='clip_batch')
 
         # Rest of graph
@@ -55,10 +60,13 @@ class AudioCNN(object):
             self.elu5 = tf.nn.elu(self.bn5)
             self.pool5 = tf.nn.max_pool(self.elu5, [1, 4, 4, 1], [1, 4, 4, 1], 'SAME')
 
+            # print self.pool5.get_shape().as_list() # None, 2, 1, 256
+
         with tf.variable_scope('output'):
+            # self.reshaped = tf.reshape(self.pool5, [None, -1])
             self.reshaped = tf.reshape(self.pool5, [self.batch_size, -1])
-            print self.reshaped.get_shape()
-            self.fc = self.fc(self.reshaped, 1, '1')
+            # print self.reshaped.get_shape()
+            self.fc = self.fc(self.reshaped, self.output_dim, '1')
             self.fc_sigmoid = tf.nn.sigmoid(self.fc)
             self.out = self.fc_sigmoid
 
