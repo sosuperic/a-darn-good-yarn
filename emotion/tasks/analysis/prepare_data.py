@@ -19,19 +19,12 @@ import time
 from core.predictions.utils import detect_peaks, smooth
 from core.utils.CreditsLocator import CreditsLocator
 from core.utils.MovieReader import MovieReader
-from core.utils.utils import VID_EXTS, VIZ_SENT_PRED_FN, AUDIO_SENT_PRED_FN
+from core.utils.utils import VID_EXTS, VIZ_SENT_PRED_FN, AUDIO_SENT_PRED_FN, \
+    CMU_PATH, VIDEOPATH_DB, VIDEOMETADATA_DB
 
 # Videos path
 VIDEOS_PATH = 'data/videos'
 HIGHLIGHTS_PATH = 'data/videos/highlights'
-
-# CMU Movie Summary path
-CMU_PATH = 'data/CMU_movie_summary/MovieSummaries/'
-
-# Video DBs
-VIDEOPATH_DB = 'data/db/VideoPath.db'
-VIDEOMETADATA_DB = 'data/db/VideoMetadata.pkl'
-
 
 ########################################################################################################################
 ########################################################################################################################
@@ -670,7 +663,8 @@ def match_film_metadata():
     with open(os.path.join(CMU_PATH, 'movie.metadata.tsv'), 'r') as f:
         for line in f.readlines():
             line = line.strip('\n').split('\t')
-            movie2metadata[line[2]] = {'date': line[3],
+            movie2metadata[line[2]] = {'id': line[0],
+                                       'date': line[3],
                                        'revenue': None if line[4] == '' else int(line[4]),
                                        'runtime': None if line[5] == '' else float(line[5]),
                                        'genres': json.loads(line[8]).values()}
@@ -851,17 +845,17 @@ def create_videometadata_db():
     Create VideoMetadata DB -- right now it's just a pkl file (I was looking for a lightweight no SQL database.)
     The keys are titles (common key with VideoPath DB).
     """
-    db = {}
-
-    print 'Getting shorts metadata'
-    short2metadata = get_shorts_metadata()
-    for title, metadata in short2metadata.items():
-        db[title] = metadata
+    db = {'films': {}, 'shorts': {}}
 
     print 'Getting films metadata'
     film2metadata = match_film_metadata()
     for title, metadata in film2metadata.items():
-        db[title] = metadata
+        db['films'][title] = metadata
+
+    print 'Getting shorts metadata'
+    short2metadata = get_shorts_metadata()
+    for title, metadata in short2metadata.items():
+        db['shorts'][title] = metadata
 
     print 'Saving'
     with open(VIDEOMETADATA_DB, 'w') as f:

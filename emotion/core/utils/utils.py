@@ -24,6 +24,14 @@ VIZ_SENT_PRED_FN = 'sent_biclass_19.csv'
 # AUDIO_SENT_PRED_FN = 'audio-valence_reg_4.csv'
 AUDIO_SENT_PRED_FN = 'audio-valence_class_2.csv'
 
+
+# CMU Movie Summary path
+CMU_PATH = 'data/CMU_movie_summary/MovieSummaries/'
+
+# Video DBs
+VIDEOPATH_DB = 'data/db/VideoPath.db'
+VIDEOMETADATA_DB = 'data/db/VideoMetadata.pkl'
+
 ########################################################################################################################
 # Neural network - Set up, boilerplate, etc.
 ########################################################################################################################
