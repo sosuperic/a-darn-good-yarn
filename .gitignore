@@ -4,6 +4,7 @@
 *.npz
 *idea/
 *.ipynb_checkpoints
+apikey.cfg
 
 # Large data, models, etc. for original vizsent repo
 vizsent/Sentibank
