@@ -52,13 +52,13 @@ class Dataset(object):
             if self.params['dataset'] == 'Sentibank':
                 self.output_dim = 8
             elif self.params['dataset'] == 'MVSO':
-                self.output_dim = 20        # 20 and not 24 b/c using emo with max val -- not all emo's are present
+                self.output_dim = 20            # 20 and not 24 b/c using emo with max val -- not all emo's are present
         elif self.params['obj'] == 'bc':
             self.label_dtype = tf.int32
             if self.params['dataset'] == 'Sentibank':
-                self.output_dim = 1553          # This would change if min_bc_class_size was actually used...
+                self.output_dim = 1553          # this will be lower if min_bc_cs is actually used
             elif self.params['dataset'] == 'MVSO':
-                self.output_dim = 4421
+                self.output_dim = 4421          # this will be lower if min_bc_cs is actually used
 
     ####################################################################################################################
     # Basic getters for public
@@ -122,6 +122,13 @@ class SentibankDataset(Dataset):
         elif self.params['obj'] == 'bc':
             self.bc_lookup = get_bc2idx(self.params['dataset'])
 
+            # Some bc's are filtered out. The label from prepare_data is the index of the bc.
+            # However, this means this index will exceed the output_dim of the network, and the labels won't
+            # make any sense. Thus, when reading the label from the tfrecord, we want to map it to a idx
+            # from [0, output_dim]
+            # This will also be saved.
+            self.bc_labelidx2filteredidx = {}
+
     ####################################################################################################################
     # Getting tfrecords list
     ####################################################################################################################
@@ -152,6 +159,7 @@ class SentibankDataset(Dataset):
                 json.dump(sorted_label2count, f)
 
         elif self.params['mode'] == 'test':
+            # files_list = self._get_tfrecords_files_list('valid')
             files_list = self._get_tfrecords_files_list('test')
 
         self.num_batches = {k: int(v / self.params['batch_size']) for k,v in self.num_pts.items()}
@@ -160,6 +168,7 @@ class SentibankDataset(Dataset):
             # TODO: how to calculate num_batches?
             2
 
+        print self.output_dim
         print self.num_pts
         print self.num_batches
 
@@ -181,13 +190,15 @@ class SentibankDataset(Dataset):
         tfrecords_dir = os.path.join(self.__cwd__, tfrecords_path)
         split_dir = os.path.join(tfrecords_dir, split_name)
         n = 0
+        num_bc_classes = 0
+        self.label2bc = {}
         for f in [f for f in os.listdir(split_dir) if not f.startswith('.')]:
             bc = os.path.basename(f).split('.')[0]
 
             # Potentially skip this biconcept
             # If objective is predicting bc class, skip biconcept if not enough images
             if self.params['obj'] == 'bc':
-                num_imgs = len(os.listdir(os.path.join(self.__cwd__, bc_path, bc)))
+                num_imgs = len([tmpf for tmpf in os.listdir(os.path.join(self.__cwd__, bc_path, bc)) if tmpf.endswith('jpg')])
                 if num_imgs < self.params['min_bc_class_size']:
                     continue
             # Predicting sentiment (either regression or classification)
@@ -217,6 +228,11 @@ class SentibankDataset(Dataset):
             self.label2count[label] += c
             n += c
 
+            # This will be used to set output_dim
+            if self.params['obj'] == 'bc':
+                self.bc_labelidx2filteredidx[label] = num_bc_classes
+                num_bc_classes += 1
+
             # Load mean and std stats for this biconcept
             # Running average: new average = old average * (n-c)/n + sum of new value/n).
             # Where n = total count, m = count in this update
@@ -230,16 +246,35 @@ class SentibankDataset(Dataset):
             # break
 
         # Save mean and std so we can standardize data in graph
-        self.mean = mean
-        self.std = std
-        # Pickle so we can use at test time
-        with open(os.path.join(self.params['ckpt_dirpath'], 'mean.pkl'), 'w') as f:
-            pickle.dump(mean, f, protocol=2)
-        with open(os.path.join(self.params['ckpt_dirpath'], 'std.pkl'), 'w') as f:
-            pickle.dump(std, f, protocol=2)
+        if self.params['mode'] == 'train':
+            self.mean = mean
+            self.std = std
+
+            # Pickle so we can use at test time
+            with open(os.path.join(self.params['ckpt_dirpath'], 'mean.pkl'), 'w') as f:
+                pickle.dump(mean, f, protocol=2)
+            with open(os.path.join(self.params['ckpt_dirpath'], 'std.pkl'), 'w') as f:
+                pickle.dump(std, f, protocol=2)
+        elif self.params['mode'] == 'test':
+            # Load mean and std
+            self.mean = pickle.load(open(os.path.join(self.params['ckpt_dirpath'], 'mean.pkl'), 'r'))
+            self.std = pickle.load(open(os.path.join(self.params['ckpt_dirpath'], 'std.pkl'), 'r'))
 
         print 'mean: {}'.format(self.mean)
         print 'std: {}'.format(self.std)
+
+        if self.params['obj'] == 'bc':
+            self.output_dim = num_bc_classes
+
+            # Save so we can map it back to the bc later
+            with open(os.path.join(self.params['ckpt_dirpath'], 'bc_labelidx2filteredidx.pkl'), 'w') as f:
+                pickle.dump(self.bc_labelidx2filteredidx, f, protocol=2)
+
+            # Used when reading and decoding tfrecords to get new label
+            keys = tf.constant([str(orig_idx) for orig_idx in self.bc_lookup.values()])
+            values = tf.constant([self.bc_labelidx2filteredidx.get(orig_idx, -1) for orig_idx in self.bc_lookup.values()], tf.int64)
+            self.label_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(keys, values), -1)
+            self.label_table.init.run()
 
         return files_list
 
@@ -278,6 +313,11 @@ class SentibankDataset(Dataset):
         if self.params['prog_finetune']:
             # id = tf.decode_raw()
             pred = self.id2pred[id]
+
+        if self.params['obj'] == 'bc':
+            label = tf.as_string(label)
+            label = self.label_table.lookup(label)
+            label = tf.cast(label, tf.int32)
 
         return img, label, id, pred
 

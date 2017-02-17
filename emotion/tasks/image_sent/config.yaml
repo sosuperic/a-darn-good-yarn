@@ -8,6 +8,8 @@ img_crop_h: 224
 batch_size: 16
 epochs: 20
 dropout: 0.5
+weight_decay_lreg: 0.0005
+bn_decay: 0.9
 save_every_epoch: 1
 val_every_epoch: 1
 

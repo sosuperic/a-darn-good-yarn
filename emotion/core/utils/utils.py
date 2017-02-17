@@ -163,6 +163,7 @@ def get_optimizer(params):
     lr = params['lr']
     weight_decay = params['weight_decay'] if params['weight_decay'] else 0.9
     momentum = params['momentum'] if params['momentum'] else 0.0
+    adam_eps = params['adam_eps'] if params['adam_eps'] else 1.0
 
     if optim_name == 'sgd':
         optim = tf.train.GradientDescentOptimizer(lr)
@@ -171,7 +172,7 @@ def get_optimizer(params):
     if optim_name == 'adagrad':
         optim = tf.train.AdagradOptimizer(lr)
     if optim_name == 'adam':
-        optim = tf.train.AdamOptimizer(learning_rate=lr, epsilon=1.0)
+        optim = tf.train.AdamOptimizer(learning_rate=lr, epsilon=adam_eps)
     if optim_name == 'rmsprop':
         optim = tf.train.RMSPropOptimizer(lr, decay=weight_decay, momentum=momentum)
 

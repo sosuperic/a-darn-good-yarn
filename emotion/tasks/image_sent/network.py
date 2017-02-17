@@ -9,9 +9,9 @@ import tensorflow as tf
 from datasets import get_dataset
 from prepare_data import SENT_BICLASS_LABEL2INT, SENT_TRICLASS_LABEL2INT, SENTIBANK_EMO_LABEL2INT, MVSO_EMO_LABEL2INT, \
     get_bc2idx
-from core.basic_cnn import BasicVizsentCNN
-from core.vgg.vgg16 import vgg16
-from core.modified_alexnet import ModifiedAlexNet
+from core.image.basic_cnn import BasicVizsentCNN
+from core.image.vgg.vgg16 import vgg16
+from core.image.modified_alexnet import ModifiedAlexNet
 from core.utils.utils import get_optimizer, load_model, save_model, setup_logging, scramble_img, scramble_img_recursively
 
 class Network(object):
@@ -25,7 +25,6 @@ class Network(object):
         """Train"""
         self.dataset = get_dataset(self.params)
         self.logger = self._get_logger()
-        self.output_dim = self.dataset.get_output_dim()
         with tf.Session() as sess:
             # Get data
             self.logger.info('Retrieving training data and setting up graph')
@@ -34,6 +33,7 @@ class Network(object):
             va_img_batch, va_label_batch = splits['valid']['img_batch'], splits['valid']['label_batch']
 
             # Get model
+            self.output_dim = self.dataset.get_output_dim()
             model = self._get_model(sess, tr_img_batch)
 
             # Loss
@@ -65,6 +65,7 @@ class Network(object):
                     if self.params['obj'] == 'bc':       # same thing but with topk accuracy
                         _, imgs, last_fc, loss_val, acc_val, top5_acc_val, top10_acc_val, summary = sess.run(
                             [train_step, tr_img_batch, model.last_fc, self.loss, self.acc,
+                             # splits['train']['id_batch'], self.tr_label_batch,
                              self.top5_acc, self.top10_acc, summary_op])
                     else:
                         _, imgs, last_fc, loss_val, acc_val, summary = sess.run(
@@ -72,6 +73,9 @@ class Network(object):
 
                     self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
                     self.logger.info('................... -- Acc: {}'.format(acc_val))
+
+                    # print tmp_ids
+                    # print tmp_labels
 
                     if self.params['obj'] == 'bc':
                         self.logger.info('................. -- Top-5 Acc: {}'.format(top5_acc_val))
@@ -122,7 +126,6 @@ class Network(object):
         """Test"""
         self.dataset = get_dataset(self.params)
         self.logger = self._get_logger()
-        self.output_dim = self.dataset.get_output_dim()
         with tf.Session() as sess:
             # Get data
             self.logger.info('Getting test set')
@@ -139,6 +142,7 @@ class Network(object):
 
             # Get model
             self.logger.info('Building graph')
+            self.output_dim = self.dataset.get_output_dim()
             model = self._get_model(sess, te_img_batch)
 
             # Loss
@@ -182,8 +186,8 @@ class Network(object):
                                                               feed_dict={'img_batch:0': img_batch,
                                                                         'label_batch:0': label_batch})
                 elif self.params['obj'] == 'bc':
-                    loss_val, acc_val, top5_acc_val, top10_acc_val, summary = sess.run(
-                        [self.loss, self.acc, self.top5_acc, self.top10_acc, summary_op])
+                    probs, loss_val, acc_val, top5_acc_val, top10_acc_val, summary = sess.run(
+                        [model.probs, self.loss, self.acc, self.top5_acc, self.top10_acc, summary_op])
                 else:
                     loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op])
 
@@ -193,13 +197,16 @@ class Network(object):
 
                 self.logger.info('Test minibatch {} / {} -- Loss: {}'.format(j, num_batches, loss_val))
                 self.logger.info('................... -- Acc: {}'.format(acc_val))
+                if self.params['obj'] == 'bc':
+                    self.logger.info('................... -- Top-5 Acc: {}'.format(top5_acc_val))
+                    self.logger.info('................... -- Top-10 Acc: {}'.format(top10_acc_val))
                 self.logger.info('Overall acc: {}'.format(overall_acc))
 
                 if self.params['obj'] == 'bc':
                     top5_overall_correct += int(top5_acc_val * te_img_batch.get_shape().as_list()[0])
                     top10_overall_correct += int(top10_acc_val * te_img_batch.get_shape().as_list()[0])
-                    print top5_acc_val, int(top5_acc_val * te_img_batch.get_shape().as_list()[0]), top5_overall_correct
-                    print top10_acc_val, int(top10_acc_val * te_img_batch.get_shape().as_list()[0]), top10_overall_correct
+                    # print top5_acc_val, int(top5_acc_val * te_img_batch.get_shape().as_list()[0]), top5_overall_correct
+                    # print top10_acc_val, int(top10_acc_val * te_img_batch.get_shape().as_list()[0]), top10_overall_correct
                     top5_overall_acc = float(top5_overall_correct) / overall_num
                     top10_overall_acc = float(top10_overall_correct) / overall_num
                     self.logger.info('Top5 overall acc: {}'.format(top5_overall_acc))
@@ -217,6 +224,84 @@ class Network(object):
             coord.request_stop()
             coord.join(threads)
 
+    def test_bc_precatk(self):
+        """
+        To compare biconcept classifier against results in papers, calculate precision @ k metric for information
+        retrieval. For a given bc, get the top k images with the highest score for that concept. How many of those
+        top k images' label are actually that bc?
+        """
+        self.dataset = get_dataset(self.params)
+        self.logger = self._get_logger()
+        with tf.Session() as sess:
+            # Get data
+            self.logger.info('Getting test set')
+            te_img_batch, self.te_label_batch = self.dataset.setup_graph()
+            num_batches = self.dataset.get_num_batches('test')
+
+            # Get model
+            self.logger.info('Building graph')
+            self.output_dim = self.dataset.get_output_dim()
+            model = self._get_model(sess, te_img_batch)
+
+            # Loss
+            self._get_loss(model)
+
+            # Weights and gradients
+            grads = tf.gradients(self.loss, tf.trainable_variables())
+            self.grads_and_vars = list(zip(grads, tf.trainable_variables()))
+
+            # Summary ops and writer
+            summary_op = self._get_summary_ops()
+            summary_writer = tf.summary.FileWriter(self.params['ckpt_dirpath'] + '/test', graph=tf.get_default_graph())
+
+            # Initialize
+            coord, threads = self._initialize(sess)
+
+            # Restore model now that graph is complete -- loads weights to variables in existing graph
+            self.logger.info('Restoring checkpoint')
+            saver = load_model(sess, self.params)
+
+
+
+            # Test
+            self.logger.info('Predicting on test set')
+            from collections import defaultdict
+            import heapq
+            class2heap = defaultdict(list)
+
+            print self.output_dim
+
+            for j in range(num_batches):
+                last_fc, probs, labels, loss_val, acc_val, top5_acc_val, top10_acc_val, summary = sess.run(
+                    [model.last_fc, model.probs, self.te_label_batch,
+                     self.loss, self.acc, self.top5_acc, self.top10_acc, summary_op])
+
+                for pt_idx in range(probs.shape[0]):
+                    for class_idx in range(probs.shape[1]):
+                        heapq.heappush(class2heap[labels[pt_idx]], (last_fc[pt_idx][class_idx], class_idx))
+
+            overall_top10_correct = 0
+            overall_n = 0
+            class2precattopk = {}
+            for class_idx, heap in class2heap.items():
+                top10 = heapq.nlargest(10, heap)
+                top10_correct = 0
+                n = 0
+                for _, pred_idx in top10:
+                    if pred_idx == class_idx:
+                        top10_correct += 1
+                        overall_top10_correct += 1
+                    n += 1
+                    overall_n += 1
+                class2precattopk[class_idx] = float(top10_correct) / n
+                print class_idx, float(top10_correct) / n
+
+            # print class2precattopk
+
+            print float(overall_top10_correct) / overall_n
+
+            coord.request_stop()
+            coord.join(threads)
 
     ####################################################################################################################
     # Predict
@@ -336,11 +421,14 @@ class Network(object):
                           output_dim=self.output_dim,
                           img_batch=img_batch)
         elif self.params['arch'] == 'alexnet':
+            is_training = True if self.params['mode'] == 'train' else False
             model = ModifiedAlexNet(img_w=self.params['img_crop_w'],
                                     img_h=self.params['img_crop_h'],
                                     output_dim=self.output_dim,
                                     imgs=img_batch,
-                                    dropout_keep=self.params['dropout'])
+                                    dropout_keep=self.params['dropout'],
+                                    bn_decay=self.params['bn_decay'],
+                                    is_training=is_training)
 
         return model
 
@@ -388,6 +476,11 @@ class Network(object):
                 self.top5_acc = tf.reduce_mean(tf.cast(top5_acc, tf.float32))
                 top10_acc = tf.nn.in_top_k(model.last_fc, label_batch_op, 10)
                 self.top10_acc = tf.reduce_mean(tf.cast(top10_acc, tf.float32))
+
+        if self.params['use_l2']:
+            vars = tf.trainable_variables()
+            l2_reg = tf.add_n([tf.nn.l2_loss(v) for v in vars])
+            self.loss += self.params['weight_decay_lreg'] * l2_reg
 
     def _get_summary_ops(self):
         """Define summaries and return summary_op"""

@@ -47,10 +47,16 @@ if __name__ == '__main__':
 
     # Job specific training params
     parser.add_argument('-lr', dest='lr', type=float, default=None, help='learning rate')
-    parser.add_argument('-optim', dest='optim', default=None,
+    parser.add_argument('--optim', dest='optim', default=None,
                         help='sgd,adadelta,adagrad,adam,rmsprop; optimziation method')
+    parser.add_argument('--adam_eps', dest='adam_eps', type=float, default=None, help='adam epsilon')
     parser.add_argument('--momentum', dest='momentum', type=float, default=None, help='momentum')
-    parser.add_argument('--weight_decay', dest='weight_decay', type=float, default=None, help='weight decay')
+    parser.add_argument('--weight_decay', dest='weight_decay', type=float, default=None,
+                        help='weight decay for rmsprop')
+    parser.add_argument('--use_l2', dest='use_l2', action='store_true', help='use l2 regularization')
+    parser.add_argument('--weight_decay_lreg', dest='weight_decay', type=float, default=None,
+                        help='weight decay for l1/l2 regularization, i.e. value * l2_regularization_term')
+    parser.add_argument('--bn_decay', dest='bn_decay', type=float, default=None)
 
 
     # Testing options - not found in yaml
@@ -101,7 +107,11 @@ if __name__ == '__main__':
         params['dropout'] = 1.0
         params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
         network = Network(params)
-        network.test()
+        if params['obj'] == 'bc':
+            network.test()
+           # network.test_bc_precatk()
+        else:
+            network.test()
 
     elif params['mode'] == 'predict':
         params['dropout'] = 1.0
