@@ -6,7 +6,7 @@ from datasets import MELGRAM_20S_SIZE
 import tensorflow as tf
 
 class AudioCNN(object):
-    def __init__(self, clips=None, output_dim=None, bn_decay=None, is_training=None):
+    def __init__(self, clips=None, output_dim=None, bn_decay=None, is_training=None, dropout_keep=None):
         self.clips = clips
         self.batch_size = self.clips.get_shape().as_list()[0]        # variable sized batch
         # print self.batch_size
@@ -66,7 +66,12 @@ class AudioCNN(object):
             # self.reshaped = tf.reshape(self.pool5, [None, -1])
             self.reshaped = tf.reshape(self.pool5, [self.batch_size, -1])
             # print self.reshaped.get_shape()
-            self.fc = self.fc(self.reshaped, self.output_dim, '1')
+            if dropout_keep:
+                self.dropout_keep = tf.constant(dropout_keep)
+                self.reshaped_dropout = tf.nn.dropout(self.reshaped, self.dropout_keep)
+                self.fc = self.fc(self.reshaped_dropout, self.output_dim, '1')
+            else:
+                self.fc = self.fc(self.reshaped, self.output_dim, '1')
             self.fc_sigmoid = tf.nn.sigmoid(self.fc)
             self.out = self.fc_sigmoid
 

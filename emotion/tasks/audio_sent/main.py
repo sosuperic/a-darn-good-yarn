@@ -37,7 +37,9 @@ if __name__ == '__main__':
     parser.add_argument('-lr', dest='lr', type=float, default=None, help='learning rate')
     parser.add_argument('--optim', dest='optim', default=None,
                         help='sgd,adadelta,adagrad,adam,rmsprop; optimziation method')
-    parser.add_argument('--bn_decay', dest='bn_decay', type=float, default=0.9)
+    parser.add_argument('--dropout', dest='dropout', type=float, default=None,
+                        help='use 1.0 when testing -- tensorflow uses keep_prob')
+    parser.add_argument('--bn_decay', dest='bn_decay', type=float, default=None)
     parser.add_argument('--momentum', dest='momentum', type=float, default=None, help='momentum')
     parser.add_argument('--weight_decay', dest='weight_decay', type=float, default=None, help='weight decay')
 

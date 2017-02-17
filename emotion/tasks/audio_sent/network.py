@@ -34,7 +34,8 @@ class Network(object):
             va_clip_batch, va_label_batch = splits['valid']['clip_batch'], splits['valid']['label_batch']
 
             # Get model
-            model = self._get_model(sess, tr_clip_batch, self.params['bn_decay'], is_training=True)
+            model = self._get_model(sess, tr_clip_batch, self.params['bn_decay'], is_training=True,
+                                    dropout=self.params['dropout'])
 
             # Loss
             self._get_loss(model)
@@ -137,8 +138,8 @@ class Network(object):
 
             # Get model
             self.logger.info('Building graph')
-            model = self._get_model(sess, te_clip_batch, self.params['bn_decay'], is_training=False)
-            # model = self._get_model(sess, te_clip_batch, self.params['bn_decay'], is_training=True)
+            model = self._get_model(sess, te_clip_batch, self.params['bn_decay'], is_training=False,
+                                    dropout=self.params['dropout'])
 
             # Loss
             self._get_loss(model)
@@ -263,7 +264,8 @@ class Network(object):
                 with tf.variable_scope('dummy_input'):
                     self.clip_batch = tf.zeros(batch_shape)
                 # model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=True)
-                model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=False)
+                model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=False,
+                                        dropout=self.params['dropout'])
 
                 # Initialize
                 coord, threads = self._initialize(sess)
@@ -344,7 +346,7 @@ class Network(object):
         # _, self.logger = setup_logging(save_path=logs_path)
         return logger
 
-    def _get_model(self, sess, clip_batch, bn_decay, is_training=None):
+    def _get_model(self, sess, clip_batch, bn_decay, is_training=None, dropout=None):
         """Return model (sess is required to load weights for vgg)"""
         # Get model
         model = None
@@ -354,7 +356,8 @@ class Network(object):
                 clips=clip_batch,
                 output_dim=self.output_dim,
                 bn_decay=bn_decay,
-                is_training=is_training)
+                is_training=is_training,
+                dropout_keep=dropout)
 
         return model
 
