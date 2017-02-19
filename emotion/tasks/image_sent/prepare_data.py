@@ -46,6 +46,9 @@ YOU_IMEMO_PATH = 'data/you_imemo/agg'
 # Plutchik
 PLUTCHIK_PATH = 'data/plutchik'
 
+# AVA
+AVA_PATH = 'data/AVA'
+
 ########################################################################################################################
 # Sentibank
 ########################################################################################################################
@@ -579,6 +582,25 @@ def save_plutchik_color_imgs():
             import scipy.misc
             scipy.misc.imsave(os.path.join(PLUTCHIK_PATH, '{}_{}.jpg'.format(i, label)), im)
 
+########################################################################################################################
+# AVA
+########################################################################################################################
+def ava():
+    import sys
+    # Add this to path so that files within vislab can import vislab
+    sys.path.insert(0,  os.path.realpath('core/ext_libs'))
+
+    from core.ext_libs.vislab.datasets import ava
+
+    df = ava.get_ava_df()
+    print df
+    print df.columns
+    # print df.index
+    print '=' * 100
+    print df[df.index=='10438']
+
+
+
 if __name__ == '__main__':
 
     # Set up commmand line arguments
@@ -595,6 +617,7 @@ if __name__ == '__main__':
     parser.add_argument('--bc_channel_mean_std', dest='bc_channel_mean_std', action='store_true')
     parser.add_argument('--you_dl_imgs', dest='you_dl_imgs', action='store_true')
     parser.add_argument('--save_plutchik_color_imgs', dest='save_plutchik_color_imgs', action='store_true')
+    parser.add_argument('--ava', dest='ava', action='store_true')
 
     cmdline = parser.parse_args()
 
@@ -622,3 +645,5 @@ if __name__ == '__main__':
         retrieve_you_imemo_imgs()
     elif cmdline.save_plutchik_color_imgs:
         save_plutchik_color_imgs()
+    elif cmdline.ava:
+        ava()

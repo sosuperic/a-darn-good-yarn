@@ -1,0 +1,17 @@
+{
+    "paths": {
+        "AVA": "data/AVA",
+        "shared_data": "data/AVA/ava_data"
+    },
+    "api_keys": {
+        "flickr": "",
+        "behance": "",
+        "500px": ["", ""]
+    },
+    "servers": {
+        "mongo": ["0.0.0.0", 27017],
+        "redis": ["0.0.0.0", 6379],
+        "redis_exclude": "orange6"
+    }
+}
+

@@ -29,3 +29,13 @@ visual-tensorflow/website/shape/static/videos
 # Local things
 notes
 *outputs
+
+# External libraries
+*/*/ext_libs/*
+!*/*/ext_libs/__init__.py
+!*/*/ext_libs/vislab
+*/*/ext_libs/vislab/*
+!*/*/ext_libs/vislab/config.json
+
+#!*ext_libs/vislab
+#!ext_libs/vislab/config.json
