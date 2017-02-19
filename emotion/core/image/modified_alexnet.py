@@ -23,7 +23,7 @@ class ModifiedAlexNet(object):
         # Rest of graph
         with tf.variable_scope('conv1'):
             self.conv1 = self.conv(self.img_batch, [11, 11, 3, 96], [96], [1, 4, 4, 1])
-            self.bn1 = tf.contrib.layers.batch_norm(self.conv1, decay=self.bn_decay, is_training=self.is_training, updates_collections=None)
+            self.bn1 = tf.contrib.layers.batch_norm(self.conv1, decay=self.bn_decay, is_training=self.is_training, updates_collections=None, fused=True)
             self.relu1 = tf.nn.relu(self.bn1)
             # self.relu1 = tf.nn.relu(self.conv1)
             # self.relu1 = tf.nn.elu(self.conv1)
@@ -33,7 +33,7 @@ class ModifiedAlexNet(object):
         with tf.variable_scope('conv2'):
             self.conv2 = self.conv(self.norm1, [5, 5, 96, 128], [128], [1, 1, 1, 1])
             # self.conv2 = self.conv(self.norm1, [5, 5, 96, 256], [256], [1, 1, 1, 1])
-            self.bn2 = tf.contrib.layers.batch_norm(self.conv2, decay=self.bn_decay, is_training=self.is_training, updates_collections=None)
+            self.bn2 = tf.contrib.layers.batch_norm(self.conv2, decay=self.bn_decay, is_training=self.is_training, updates_collections=None, fused=True)
             self.relu2 = tf.nn.relu(self.bn2)
             # self.relu2 = tf.nn.relu(self.conv2)
             # self.relu2 = tf.nn.elu(self.conv2)
@@ -43,7 +43,7 @@ class ModifiedAlexNet(object):
         with tf.variable_scope('conv3'):
             self.conv3 = self.conv(self.norm2, [3, 3, 128, 384], [384], [1, 1, 1, 1])
             # self.conv3 = self.conv(self.norm2, [3, 3, 256, 384], [384], [1, 1, 1, 1])
-            self.bn3 = tf.contrib.layers.batch_norm(self.conv3, decay=self.bn_decay, is_training=self.is_training, updates_collections=None)
+            self.bn3 = tf.contrib.layers.batch_norm(self.conv3, decay=self.bn_decay, is_training=self.is_training, updates_collections=None, fused=True)
             self.relu3 = tf.nn.relu(self.bn3)
             # self.relu3 = tf.nn.relu(self.conv3)
             # self.relu3 = tf.nn.elu(self.conv3)
@@ -51,7 +51,7 @@ class ModifiedAlexNet(object):
         with tf.variable_scope('conv4'):
             self.conv4 = self.conv(self.relu3, [3, 3, 384, 192], [192], [1, 1, 1, 1])
             # self.conv4 = self.conv(self.relu3, [3, 3, 384, 384], [384], [1, 1, 1, 1])
-            self.bn4 = tf.contrib.layers.batch_norm(self.conv4, decay=self.bn_decay, is_training=self.is_training, updates_collections=None)
+            self.bn4 = tf.contrib.layers.batch_norm(self.conv4, decay=self.bn_decay, is_training=self.is_training, updates_collections=None, fused=True)
             self.relu4 = tf.nn.relu(self.bn4)
             # self.relu4 = tf.nn.relu(self.conv4)
             # self.relu4 = tf.nn.elu(self.conv4)
@@ -59,7 +59,7 @@ class ModifiedAlexNet(object):
         with tf.variable_scope('conv5'):
             self.conv5 = self.conv(self.relu4, [3, 3, 192, 128], [128], [1, 1, 1, 1])
             # self.conv5 = self.conv(self.relu4, [3, 3, 384, 256], [256], [1, 1, 1, 1])
-            self.bn5 = tf.contrib.layers.batch_norm(self.conv5, decay=self.bn_decay, is_training=self.is_training, updates_collections=None)
+            self.bn5 = tf.contrib.layers.batch_norm(self.conv5, decay=self.bn_decay, is_training=self.is_training, updates_collections=None, fused=True)
             self.relu5 = tf.nn.relu(self.bn5)
             # self.relu5 = tf.nn.relu(self.conv5)
             # self.relu5 = tf.nn.elu(self.conv5)
