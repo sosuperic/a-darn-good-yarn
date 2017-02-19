@@ -1,0 +1,28 @@
+
+img_w: 256
+img_h: 256
+
+img_crop_w: 224
+img_crop_h: 224
+
+hidden_dim: 200
+bins: 64
+
+batch_size: 16
+epochs: 20
+dropout: 0.5
+weight_decay_lreg: 0.0005
+save_every_epoch: 1
+val_every_epoch: 1
+
+sent_neutral_absval: 0.5
+
+gray_hist:
+    sent_biclass:
+        optim: adam
+        lr: 0.01
+
+rgb_hist:
+    sent_biclass:
+        optim: adam
+        lr: 0.01

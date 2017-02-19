@@ -30,6 +30,9 @@ visual-tensorflow/website/shape/static/videos
 notes
 *outputs
 
+# Symlinks
+emotion/website/shape/static/videos
+
 # External libraries
 */*/ext_libs/*
 !*/*/ext_libs/__init__.py
