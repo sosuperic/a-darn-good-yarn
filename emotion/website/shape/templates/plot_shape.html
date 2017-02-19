@@ -55,11 +55,17 @@
 
             // Clusters View - intialize
             var clusters = {};
-            clusters.format = 'films';
-            clusters.dynamicRange = true;
-            clusters.k = Object.keys(data.clusters.films)[0];
-            clusters.focusOnKth = 'all';
-            this.clusters = clusters;
+            if (Object.keys(data.clusters).length > 0) {
+                clusters.format = 'films';
+                clusters.dynamicRange = true;
+                clusters.k = Object.keys(data.clusters.films)[0];
+                clusters.focusOnKth = 'all';
+                this.clusters = clusters;
+
+                this.availableViews = ['One video', 'Clusters'];
+            } else {
+                this.availableViews = ['One video'];
+            }
         };
 
         /***************************************************************************************************************
@@ -72,14 +78,14 @@
             /***********************************************************************************************************
              * Manage views
              **********************************************************************************************************/
-            var guiView = gui.add(datgui, 'view', ['One video', 'Clusters']);
+            var guiView = gui.add(datgui, 'view', datgui.availableViews);
 
             guiView.onFinishChange(function(view) {
                 removeViewSpecificGUI();
                 if (view == 'One video') {
                     addOneVideoGUI();
                     drawOneVideo(datgui);
-                    showImage("../static/videos/" + data.framepaths[0], 256, 256, '');
+                    showImage("static/videos/" + data.framepaths[0], 256, 256, '');
                     showMp3(data.mp3path);
                 } else if (view == 'Clusters') {
                     removeFrame();
@@ -230,7 +236,7 @@
              * Draw initial
              **********************************************************************************************************/
             addOneVideoGUI();
-            showImage("../static/videos/" + data.framepaths[0], 256, 256, '');
+            showImage("static/videos/" + data.framepaths[0], 256, 256, '');
             showMp3(data.mp3path);
             drawOneVideo(datgui);
 
@@ -256,7 +262,7 @@
                 redraw_callback();
             }
             function redraw_callback() {
-                showImage("/static/videos/" + data.framepaths[0], 256, 256, '');
+                showImage("static/videos/" + data.framepaths[0], 256, 256, '');
                 showMp3(data.mp3path);
                 drawOneVideo(datgui);
             }
@@ -402,7 +408,7 @@
                     onHover: function (e) {
                         if (e[0]) {
                             var frameIdx = e[0]._index;
-                            showImage("../static/videos/" + data.framepaths[frameIdx * DOWNSAMPLE_RATE]
+                            showImage("static/videos/" + data.framepaths[frameIdx * DOWNSAMPLE_RATE]
                                     , 256, 256, '');
                         }
                     },

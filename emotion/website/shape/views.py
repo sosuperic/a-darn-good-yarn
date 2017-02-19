@@ -6,24 +6,26 @@
 
 from flask import Flask, Response, request, render_template
 import json
-import math
 from natsort import natsorted
-import numpy as np
 import os
 import pandas as pd
 import pickle
 
 from shape import app
-from core.predictions.utils import smooth, DTWDistance
+from core.predictions.utils import smooth
 from core.utils.utils import get_credits_idx, AUDIO_SENT_PRED_FN, VIZ_SENT_PRED_FN
 
-###### PATHS, ETC.
+### PARAMS ###
 FORMATS = ['films', 'shorts', 'ads']
+# TODO: want to pass LOAD_CLUSTERS as a command line argument, but need extra wrangling to work with gunicorn
+LOAD_CLUSTERS = False
+CLUSTERS_KS = [2, 3, 4  , 5, 6, 7, 8, 9, 10]
 
+### PATHS ###
 VIDEOS_PATH = 'shape/static/videos/'
 OUTPUTS_DATA_PATH = 'shape/outputs/cluster/data/'
 
-# For Clusters view:
+# Clusters view paths
 TS_FN = \
     {'films': 'ts_dirfilms-n510-w1000-ds1-maxnf10000-fnsent_biclass_19.pkl',
      'shorts': 'ts_dirshorts-n1326-w0.14-ds1-maxnf1800-fnsent_biclass_19.pkl',
@@ -49,79 +51,28 @@ TS_DISTS_FN = \
      'shorts': 'kmedoids-ts-dists_dirshorts-n1326-w0.14-ds1-maxnf1800-fnsent_biclass_19-k{}-it100-r45.pkl',
      'ads': None}
 
-# TS_FN = \
-#     {'films': 'ts_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
-#      'shorts': 'ts_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
-#      'ads': None}
-# TS_IDX2TITLE_FN = \
-#     {'films': 'ts-idx2title_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
-#      'shorts': 'ts-idx2title_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
-#      'ads': None}
-# TS_MEAN_FN = \
-#     {'films': 'ts-mean_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
-#      'shorts': 'ts-mean_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
-#      'ads': None}
-# TS_STD_FN = \
-#     {'films': 'ts-std_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19.pkl',
-#      'shorts': 'ts-std_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19.pkl',
-#      'ads': None}
-# CENTROIDS_FN = \
-#     {'films': 'centroids_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
-#      'shorts': 'centroids_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it15-r45.pkl',
-#      'ads': None}
-# ASSIGNMENTS_FN = \
-#     {'films': 'assignments_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
-#      'shorts': 'assignments_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it15-r45.pkl',
-#      'ads': None}
-# TS_DISTS_FN = \
-#     {'films': 'ts-dists_dirfilms-n510-w500-ds1-maxnf10000-fnsent_biclass_19-k{}-it5-r250.pkl',
-#      'shorts': 'ts-dists_dirshorts-n1326-wNone-ds1-maxnf1800-fnsent_biclass_19-k{}-it5-r45.pkl',
-#      'ads': None}
-
-
-# OUTPUTS_DATA_PATH = 'shape/outputs/cluster/data/old1/'
-# TS_FN = \
-#     {'films': 'ts_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
-#      'shorts': 'ts_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
-#      'ads': None}
-# TS_IDX2TITLE_FN = \
-#     {'films': 'ts_idx2title_dirfilms-n441-normMagsTrue-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
-#      'shorts': 'ts_idx2title_dirshorts-n1323-normMagsTrue-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
-#      'ads': None}
-# CENTROIDS_FN = \
-#     {'films': 'centroids_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
-#      'shorts': 'centroids_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
-#      'ads': None}
-# ASSIGNMENTS_FN = \
-#     {'films': 'assignments_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
-#      'shorts': 'assignments_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
-#      'ads': None}
-# TS_DISTS_FN = \
-#     {'films': 'ts_dists_dirfilms-n441-normMagsTrue-k{}-w1000-ds6-maxnfinf-fnsent_biclass_19.pkl',
-#      'shorts': 'ts_dists_dirshorts-n1323-normMagsTrue-k{}-w30-ds3-maxnf1800-fnsent_biclass_19.pkl',
-#      'ads': None}
-
-###### GLOBALS
+### GLOBALS ###
+# One Video view
+# For all videos
 title2vidpath = {}
-format2titles = {}
+format2titles = {fmt: [] for fmt in FORMATS}
 title2format = {}
-
-# For One Video view - to adjust window length
-title2pred_len = {}     # films/shorts -> title -> len
-# For One Video view - used for initial curve to display
-cur_format = None
+title2pred_len = {fmt: {} for fmt in FORMATS}     # fmt -> title -> len
+# For current video
 cur_title = None
 cur_viz_pd_df = None
 cur_audio_pd_df = None
 cur_vid_framepaths = None
+cur_mp3path = None
+# To adjust window length when switching between videos
 
-# For Clusters view
-clusters = {}           # films/shorts -> key (k) -> {assignments: k-idx: array, centroids: k-idx: array, closest: k-idx: array of member_indices}
-ts = {}                 # films/shorts -> list of arrays
-ts_idx2title = {}       # films/shorts -> idx -> title
+# Clusters view
+clusters = {}           # fmt -> key (k) -> value {assignments: k-idx: array, centroids: k-idx: array, closest: k-idx: array of member_indices}
+ts = {}                 # fmt -> list of arrays
+ts_idx2title = {}       # fmt -> idx -> title
 
 ########################################################################################################################
-# PREDICTION FUNCTIONS
+# One Video view - get predictions, frames, audio, etc.
 ########################################################################################################################
 def get_preds_from_dfs(name2df_and_window):
     """
@@ -139,18 +90,6 @@ def get_preds_from_dfs(name2df_and_window):
             values = list(smooth(df.Valence.values, window_len=window)) if (df is not None) else []
             preds[name]['audio-valence'] = values
     return preds
-
-# def get_preds_from_df(df, window_len=48):
-#     """
-#     Return dict. Each key is the label, value is list of smoothed frame-wise predictions
-#     """
-#     if len(df.columns) == 2:     # sent_biclass -> just show positive
-#         preds = {'pos': list(smooth(df.pos.values, window_len=window_len))}
-#     else:
-#         preds = {}
-#         for c in df.columns:
-#             preds[c] = list(smooth(df[c].values, window_len=window_len))
-#     return preds
 
 def get_cur_vid_df_and_framepaths(cur_title):
     """
@@ -175,6 +114,9 @@ def get_cur_vid_df_and_framepaths(cur_title):
         cur_audio_pd_df = None
 
     # Get framepaths
+    # Note: vps in title2vidpath is of the form '<VIDEOS_PATH>/films/animated/Frozen (2013)/...'
+    # Return the path relative to <VIDEOS_PATH>, i.e. 'films/animated/Frozen (2013)/...' and let
+    # the template create the path relative to its location
     cur_vid_framepaths = [f for f in os.listdir(os.path.join(title2vidpath[cur_title], 'frames')) if \
             not f.startswith('.')]
     cur_vid_framepaths = [os.path.join(title2vidpath[cur_title].split(VIDEOS_PATH)[1], 'frames', f) for \
@@ -193,23 +135,31 @@ def get_cur_vid_df_and_framepaths(cur_title):
 
     return cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths
 
-def get_cur_mp3path(cur_vid_framepaths):
-    # Get current mp3path if it exists
+def get_cur_mp3path(title):
+    """
+    Get mp3path of current video if it exists.
+
+    Note: vps in title2vidpath is of the form '<VIDEOS_PATH>/films/animated/Frozen (2013)/...'
+    Return the path relative to <VIDEOS_PATH>, i.e. 'films/animated/Frozen (2013)/...' and let
+    the template create the path relative to its location
+    """
+    global title2vidpath
     cur_mp3path = ''
-    vid_dirpath = os.path.dirname(os.path.dirname(cur_vid_framepaths[0]))
-    for f in os.listdir(os.path.join(VIDEOS_PATH, vid_dirpath)):
+    vp = title2vidpath[title]
+    for f in os.listdir(vp):
         if f.endswith('mp3'):
-            cur_mp3path = os.path.join(vid_dirpath, f)
+            cur_mp3path = os.path.join(vp, f)
+            cur_mp3path = cur_mp3path.split(VIDEOS_PATH)[1]
     return cur_mp3path
 
 ########################################################################################################################
-# INITIAL SETUP
+# Initial setup
 ########################################################################################################################
-def get_all_vidpaths_with_frames_and_preds():
+def get_all_valid_vidpaths():
     """
     Return list of full paths to every video directory that a) contains frames/ directory, b) predictions/ directory,
     and c) frames/ directory has more than 0 frames. Starts walking in VIDEOS_PATH directory. Each full path is of the
-    form '<VIDEOS_PATH>/@Animated/@OldDisney/Feast/'.
+    form '<VIDEOS_PATH>/films/animated/Frozen (2013)/...'
     """
     def root_contains_valid_fmt(root):
         for fmt in FORMATS:
@@ -218,161 +168,125 @@ def get_all_vidpaths_with_frames_and_preds():
         return False
 
     def walk_dirpath(dirpath):
-        vidpaths = []
+        vidpaths_nframes = []
         for root, dirs, files in os.walk(dirpath):
             if not root_contains_valid_fmt(root):
                 continue
 
-            if ('frames' in os.listdir(root)) and ('preds' in os.listdir(root)) \
-                and (len(os.listdir(os.path.join(root, 'frames'))) > 0):
-                vidpaths.append(root)
-        return vidpaths
+            if ('frames' in os.listdir(root)) and ('preds' in os.listdir(root)):
+                nframes = len(os.listdir(os.path.join(root, 'frames')))
+                if nframes > 0:
+                    vidpaths_nframes.append([root, nframes])
+        return vidpaths_nframes
 
-    vidpaths = []
+    vidpaths_nframes = []
     for fmt in FORMATS:
-        # print fmt, vidpaths
-        vidpaths.extend(walk_dirpath(os.path.join(VIDEOS_PATH, fmt)))
+        vidpaths_nframes.extend(walk_dirpath(os.path.join(VIDEOS_PATH, fmt)))
 
-    return vidpaths
+    return vidpaths_nframes
 
-def setup_initial_data():
+def setup_initial_data(load_clusters=False):
     """
-    Return initial data to pass to template.
-    Also set global variables cur_viz_pd_df and cur_title
+    Setup globals
     """
-    ####################################################################################################################
-    # One video view (primarily) - set titles, videopaths, etc
-    ####################################################################################################################
-    global title2vidpath, format2titles, title2format
+    print 'Setting up initial data'
 
-    vidpaths = get_all_vidpaths_with_frames_and_preds()
-    for fmt in FORMATS:
-        format2titles[fmt] = []
-    for vp in vidpaths:
-        format = vp.split(VIDEOS_PATH)[1].split('/')[0]     # shape/static/videos/shorts/shortoftheweek/Feast -> shorts
+    ####################################################################################################################
+    # One Video view (primarily) - set titles, videopaths, etc
+    ####################################################################################################################
+    global title2vidpath, format2titles, title2format, title2pred_len
+
+    print 'Loading One Video view data'
+
+    vidpaths_nframes = get_all_valid_vidpaths()
+    for vp, nframes in vidpaths_nframes:
+        fmt = vp.split(VIDEOS_PATH)[1].split('/')[0]     # shape/static/videos/shorts/shortoftheweek/Feast -> shorts
         t = os.path.basename(vp)
-        title2format[t] = format
-        format2titles[format].append(t)
+
         title2vidpath[t] = vp
-    for format, titles in format2titles.items():
-        format2titles[format] = sorted(titles)
-        print '{}: {}'.format(format, len(titles))
+        format2titles[fmt].append(t)
+        title2format[t] = fmt
+        title2pred_len[t] = nframes
+
+    # Sort titles
+    for fmt, titles in format2titles.items():
+        format2titles[fmt] = sorted(titles)
+        print '{}: {}'.format(fmt, len(titles))
+
 
     ####################################################################################################################
     # Cluster view - set time series, cluster related data
     ####################################################################################################################
-    # All time series
-    global ts, ts_idx2title, title2pred_len
-    # NOTE: all the time series are of the same length -- this is the saved interpolated time series used during
-    # clustering. These are used to display the closest movies in the clusters view
+    if load_clusters:
+        print 'Loading Clusters view data'
 
-    fmt2mean, fmt2std = {}, {}
-    for fmt in ['films', 'shorts']:#FORMATS:
-        try:
-            # Load mean and std to unnormalize time series
-            mean_fn = TS_MEAN_FN[fmt]
-            std_fn = TS_STD_FN[fmt]
-            mean_path = os.path.join(OUTPUTS_DATA_PATH, mean_fn)
-            std_path = os.path.join(OUTPUTS_DATA_PATH, std_fn)
-            with open(mean_path) as f:
-                mean = pickle.load(f)
-                mean = mean.mean()
-                fmt2mean[fmt] = mean
-            with open(std_path) as f:
-                std = pickle.load(f)
-                std = std.mean()
-                fmt2std[fmt] = std
+        global ts, ts_idx2title
+        # All time series
+        # NOTE: all the time series are of the same length -- this is the saved interpolated time series used during
+        # clustering. These are used to display the closest movies in the clusters view
 
-            # Clusters view
-            ts[fmt] = pickle.load(open(os.path.join(OUTPUTS_DATA_PATH, TS_FN[fmt]), 'rb'))
-            ts[fmt] = [ts[fmt][i] * fmt2std[fmt] + fmt2mean[fmt] for i in range(len(ts[fmt]))]   # unnormalize
-            ts[fmt] = [list(arr) for arr in ts[fmt]]        # make it serializable
-            ts_idx2title[fmt] = pickle.load(open(os.path.join(OUTPUTS_DATA_PATH, TS_IDX2TITLE_FN[fmt]), 'rb'))
-
-            # One video view - adjusting window size
-            title2pred_len[fmt] = {}
-
-            for ts_idx, title in ts_idx2title[fmt].items():
-                if title in title2vidpath:
-                    vid_framespath = os.path.join(title2vidpath[title], 'frames')
-                    title2pred_len[fmt][title] = len(os.listdir(vid_framespath))
-        except Exception as e:
-            print fmt, e
-
-    global clusters
-    ks = [2, 3, 4, 5, 6, 7, 8, 9, 10]
-    for fmt in FORMATS:
-        clusters[fmt] = {}
-        for k in ks:
+        fmt2mean, fmt2std = {}, {}
+        for fmt in FORMATS:
             try:
-                k = str(k)          # use string so it's treated as a js Object instead of an array in template
-                centroids_fn = CENTROIDS_FN[fmt].format(k)
-                ts_dists_fn = TS_DISTS_FN[fmt].format(k)
-                centroids_path = os.path.join(OUTPUTS_DATA_PATH, centroids_fn)
-                ts_dists_path = os.path.join(OUTPUTS_DATA_PATH, ts_dists_fn)
-                if os.path.exists(centroids_path) and os.path.exists(ts_dists_path):
-                    clusters[fmt][k] = {}
-                    with open(centroids_path, 'rb') as f:
-                        clusters[fmt][k]['centroids'] = pickle.load(f)
+                # Load mean and std to unnormalize time series
+                mean_fn = TS_MEAN_FN[fmt]
+                std_fn = TS_STD_FN[fmt]
+                mean_path = os.path.join(OUTPUTS_DATA_PATH, mean_fn)
+                std_path = os.path.join(OUTPUTS_DATA_PATH, std_fn)
+                with open(mean_path) as f:
+                    mean = pickle.load(f).mean()
+                    fmt2mean[fmt] = mean
+                with open(std_path) as f:
+                    std = pickle.load(f).mean()
+                    fmt2std[fmt] = std
 
-                    # TS Distances to centroids
-                    # ts_dists: dict, key is int (centroid_idx), value = dict (key is member_idx, value is distance)
-                    ts_dists_fn = TS_DISTS_FN[fmt].format(k)
-                    ts_dists_path = os.path.join(OUTPUTS_DATA_PATH, ts_dists_fn)
-                    if os.path.exists(ts_dists_path):
-                        with open(ts_dists_path) as f:
-                            kdists = pickle.load(f)      # key is ts_index, value is distance to its centroid
-                        centroid2closest = {}
-                        for centroid_idx, dists in kdists.items():
-                            sorted_member_indices = sorted(dists, key=dists.get)
-                            top_n = sorted_member_indices[:10]
-                            # top_n_series = [ts['films'][m_idx] for m_idx in top_n]
-                            centroid2closest[centroid_idx] = top_n
-                        clusters[fmt][k]['closest'] = centroid2closest
+                # Load time series and unnormalize each one
+                ts[fmt] = pickle.load(open(os.path.join(OUTPUTS_DATA_PATH, TS_FN[fmt]), 'rb'))
+                ts[fmt] = [ts[fmt][i] * fmt2std[fmt] + fmt2mean[fmt] for i in range(len(ts[fmt]))]
+                ts[fmt] = [list(arr) for arr in ts[fmt]]        # make it serializable
+                ts_idx2title[fmt] = pickle.load(open(os.path.join(OUTPUTS_DATA_PATH, TS_IDX2TITLE_FN[fmt]), 'rb'))
 
-                else:
-                    print 'Centroids/assignments/ts_dists path doesnt exist:\n{}\n{}'.format(
-                        centroids_path, ts_dists_path)
             except Exception as e:
-                print e
+                # print fmt, e
+                pass
 
-    # tmp()
+        global clusters
+        for fmt in FORMATS:
+            clusters[fmt] = {}
+            for k in CLUSTERS_KS:
+                try:
+                    k = str(k)          # use string so it's treated as a js Object instead of an array in template
+                    centroids_fn = CENTROIDS_FN[fmt].format(k)
+                    ts_dists_fn = TS_DISTS_FN[fmt].format(k)
+                    centroids_path = os.path.join(OUTPUTS_DATA_PATH, centroids_fn)
+                    ts_dists_path = os.path.join(OUTPUTS_DATA_PATH, ts_dists_fn)
+                    if os.path.exists(centroids_path) and os.path.exists(ts_dists_path):
+                        clusters[fmt][k] = {}
+                        with open(centroids_path, 'rb') as f:
+                            clusters[fmt][k]['centroids'] = pickle.load(f)
+
+                        # TS Distances to centroids
+                        # ts_dists: dict, key is int (centroid_idx), value = dict (key is member_idx, value is distance)
+                        ts_dists_fn = TS_DISTS_FN[fmt].format(k)
+                        ts_dists_path = os.path.join(OUTPUTS_DATA_PATH, ts_dists_fn)
+                        if os.path.exists(ts_dists_path):
+                            with open(ts_dists_path) as f:
+                                kdists = pickle.load(f)      # key is ts_index, value is distance to its centroid
+                            centroid2closest = {}
+                            for centroid_idx, dists in kdists.items():
+                                sorted_member_indices = sorted(dists, key=dists.get)
+                                top_n = sorted_member_indices[:10]
+                                # top_n_series = [ts['films'][m_idx] for m_idx in top_n]
+                                centroid2closest[centroid_idx] = top_n
+                            clusters[fmt][k]['closest'] = centroid2closest
+                except Exception as e:
+                    # print e
+                    pass
 
     print 'Setup done'
 
-# def tmp():
-#     # DEBUGING
-#     global format2titles, title2pred_len, \
-#         cur_format, cur_title, cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths, \
-#         clusters, ts_idx2title, ts
-#
-#     # Get information for *first* video to show
-#     # cur_format = format2titles.keys()[0]
-#     cur_format = 'films'
-#     cur_title = format2titles[cur_format][0]
-#     cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
-#     cur_vid_preds = get_preds_from_dfs({'visual': {'df': cur_viz_pd_df, 'window': 300},  # window_len has to match default in html file
-#                                         'audio': {'df': cur_audio_pd_df, 'window': 1}})
-#
-#     import logging
-#     logging.debug(cur_format)
-#     print cur_format
-#     print cur_title
-#     print cur_viz_pd_df
-#     print cur_audio_pd_df
-#     print cur_vid_preds
-#     data = {'format2titles': format2titles,
-#             'framepaths': cur_vid_framepaths,
-#             'preds': cur_vid_preds,
-#             'title2pred_len': title2pred_len,
-#             # Clusters view
-#             'clusters': clusters,
-#             'ts_idx2title': ts_idx2title,
-#             'ts': ts}
-
-
 #################################################################################################
-# ROUTING FUNCTIONS
+# Routing functions
 #################################################################################################
 @app.route('/shape', methods=['GET'])
 def shape():
@@ -391,23 +305,26 @@ def shape():
         - for clusters view
     """
     global format2titles, title2pred_len, \
-        cur_format, cur_title, cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths, \
+        cur_title, cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths, cur_mp3path, \
         clusters, ts_idx2title, ts
 
-    # Get information for *first* video to show
-    # cur_format = format2titles.keys()[0]
-    cur_format = 'films'
-    cur_title = format2titles[cur_format][0]
+    # One video view - get information for first video to show
+    cur_title = format2titles[FORMATS[0]][0]
     cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
-    cur_vid_preds = get_preds_from_dfs({'visual': {'df': cur_viz_pd_df, 'window': 600},  # window_len has to match default in html file
-                                        'audio': {'df': cur_audio_pd_df, 'window': 300}})
-    cur_mp3path = get_cur_mp3path(cur_vid_framepaths)
+    cur_mp3path = get_cur_mp3path(cur_title)
+    cur_vid_preds = get_preds_from_dfs(
+        {'visual': {'df': cur_viz_pd_df, 'window': 600},  # window_len has to match default in html file
+        'audio': {'df': cur_audio_pd_df, 'window': 300}})
 
-    data = {'format2titles': format2titles,
-            'framepaths': cur_vid_framepaths,
-            'preds': cur_vid_preds,
+    data = {
+            # One Video view
+            # All videos
+            'format2titles': format2titles,
             'title2pred_len': title2pred_len,
+            # Current video
+            'framepaths': cur_vid_framepaths,
             'mp3path': cur_mp3path,
+            'preds': cur_vid_preds,
             # Clusters view
             'clusters': clusters,
             'ts_idx2title': ts_idx2title,
@@ -421,18 +338,18 @@ def get_preds_and_frames(title, visual_window, audio_window):
     Return predictions for a given movie with window_len; update global vars
     """
     global title2vidpath, \
-        cur_format, cur_title, cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths
-    if title != cur_title:
-        title = title.encode('utf-8')
-        cur_format = title2format[title]
-        cur_title = title
-        cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
+        cur_title, cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths, cur_mp3path
 
-    # print window_len, len(cur_viz_pd_df)
-    # preds = get_preds_from_df(cur_viz_pd_df, window_len=int(window_len))
-    cur_vid_preds = get_preds_from_dfs({'visual': {'df': cur_viz_pd_df, 'window': int(visual_window)},  # window_len has to match default in html file
-                                        'audio': {'df': cur_audio_pd_df, 'window': int(audio_window)}})
-    cur_mp3path = get_cur_mp3path(cur_vid_framepaths)
+    # Update current if it's a new title
+    if title != cur_title:
+        cur_title = title.encode('utf-8')
+        cur_viz_pd_df, cur_audio_pd_df, cur_vid_framepaths = get_cur_vid_df_and_framepaths(cur_title)
+        cur_mp3path = get_cur_mp3path(cur_title)
+
+    cur_vid_preds = get_preds_from_dfs(
+        {'visual': {'df': cur_viz_pd_df, 'window': int(visual_window)},
+        'audio': {'df': cur_audio_pd_df, 'window': int(audio_window)}})
+
 
     data = {'preds': cur_vid_preds, 'framepaths': cur_vid_framepaths, 'mp3path': cur_mp3path}
 
@@ -445,4 +362,6 @@ def get_preds_and_frames(title, visual_window, audio_window):
         }
     )
 
-setup_initial_data()
+# TODO: want to call this command line argument, but needs extra wrangling to work with gunicorn
+# (See run.py and commit for some more context)
+setup_initial_data(load_clusters=LOAD_CLUSTERS)
