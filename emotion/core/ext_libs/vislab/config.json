@@ -1,7 +1,7 @@
 {
     "paths": {
         "AVA": "data/AVA",
-        "shared_data": "data/AVA/ava_data"
+        "shared_data": "data/AVA/AVA_data"
     },
     "api_keys": {
         "flickr": "",

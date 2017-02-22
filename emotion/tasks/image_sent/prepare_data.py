@@ -2,6 +2,7 @@
 
 import argparse
 from collections import defaultdict, Counter
+import json
 import numpy as np
 import os
 import pickle
@@ -585,20 +586,127 @@ def save_plutchik_color_imgs():
 ########################################################################################################################
 # AVA
 ########################################################################################################################
-def ava():
+def ava_to_tfrecords(delta=0.67, split=[0.8,0.1,0.1]):
+    """
+    Write AVA images
+
+    Parameters
+    ----------
+    delta: delta to ignore neutral items
+        items < (5-delta) are negative, items > (5+delta) are positive
+    split: percent of train, valid, test
+    """
+    NUM_IMGS_PER_TFRECORD = 1000
+
     import sys
     # Add this to path so that files within vislab can import vislab
     sys.path.insert(0,  os.path.realpath('core/ext_libs'))
-
     from core.ext_libs.vislab.datasets import ava
 
+    # Load dataframe
+    print 'Loading AVA df'
     df = ava.get_ava_df()
-    print df
-    print df.columns
-    # print df.index
-    print '=' * 100
-    print df[df.index=='10438']
 
+    # Ignore 'neutral' items
+    df = df[(df.rating_mean < (5.0 - delta)) | (df.rating_mean > (5.0 + delta))]
+
+    # Add labels
+    def label_f(x, bin_edges):
+        for i in range(len(bin_edges)):
+            if x < bin_edges[i]:
+                return int(i-1)
+    bin_edges = [0, 5.0, 10.0]
+    df['label'] = df.rating_mean.apply(label_f, args=(bin_edges, ))
+
+
+    # Get id to labels
+    print 'Getting id2label'
+    id2label = {}
+    for id, row in df.iterrows():
+        id2label[id] = row.label
+
+    # Make tfrecords dir
+    out_dir = 'tfrecords_{}'.format(delta)
+    out_dirpath = os.path.join(AVA_PATH, out_dir)
+    if not os.path.exists(out_dirpath):
+        os.mkdir(out_dirpath)
+    for name in ['train', 'valid', 'test']:
+        if not os.path.exists(os.path.join(out_dirpath, name)):
+            os.mkdir(os.path.join(out_dirpath, name))
+
+    # Write tfrecords
+    # Get tfrecord filepath and writer ready
+    def get_writers(i):
+        tfrecords_filename = '{}.tfrecords'.format(i)
+        tr_tfrecords_fp = os.path.join(out_dirpath, 'train', tfrecords_filename)
+        va_tfrecords_fp = os.path.join(out_dirpath, 'valid', tfrecords_filename)
+        te_tfrecords_fp = os.path.join(out_dirpath, 'test', tfrecords_filename)
+        tr_writer = tf.python_io.TFRecordWriter(tr_tfrecords_fp)
+        va_writer = tf.python_io.TFRecordWriter(va_tfrecords_fp)
+        te_writer = tf.python_io.TFRecordWriter(te_tfrecords_fp)
+        return tr_writer, va_writer, te_writer
+
+    def _bytes_feature(value):
+        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+    def _int64_feature(value):
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+
+    tr_writer, va_writer, te_writer = get_writers(0)
+    imgs_dirpath = os.path.join(AVA_PATH, 'images')
+    i = 0
+    label2count = defaultdict(int)
+    for fn in os.listdir(imgs_dirpath):
+        if i % 1000 == 0:
+            print i, label2count
+
+        id = fn.split('.jpg')[0]
+        img_fp = os.path.join(imgs_dirpath, fn)
+
+        try:
+            # Pull out image and labels and make example
+            img = Image.open(img_fp)
+            if img.mode != 'RGB' or img.format != 'JPEG':   # e.g. black and white (mode == 'L')
+                continue
+            img = np.array(img)
+            h, w = img.shape[0], img.shape[1]
+
+            if (h < 256) or (w < 256):
+                print 'width or height too small'
+                continue
+
+            img_raw = img.tostring()
+            label = int(id2label[id])
+
+            example = tf.train.Example(features=tf.train.Features(feature={
+                'id': _bytes_feature(id),
+                'h': _int64_feature(h),
+                'w': _int64_feature(w),
+                'img': _bytes_feature(img_raw),
+                'sent_biclass': _int64_feature(label)}))
+
+            if (i % NUM_IMGS_PER_TFRECORD) < (split[0] * NUM_IMGS_PER_TFRECORD):
+                writer = tr_writer
+            elif (i % NUM_IMGS_PER_TFRECORD) < ((split[0]+split[1]) * NUM_IMGS_PER_TFRECORD):
+                writer = va_writer
+            else:
+                writer = te_writer
+
+            if (i % NUM_IMGS_PER_TFRECORD) == 0:
+                tr_writer, va_writer, te_writer = get_writers(i / NUM_IMGS_PER_TFRECORD)
+
+            writer.write(example.SerializeToString())
+
+            # Update given no exceptions
+            label2count[label] += 1
+            i += 1
+
+        except Exception as e:
+            pass
+
+    print label2count
+    with open(os.path.join(AVA_PATH, 'delta_{}_label2count.json'.format(delta)), 'wb') as fp:
+        json.dump(label2count, fp)
 
 
 if __name__ == '__main__':
@@ -617,7 +725,7 @@ if __name__ == '__main__':
     parser.add_argument('--bc_channel_mean_std', dest='bc_channel_mean_std', action='store_true')
     parser.add_argument('--you_dl_imgs', dest='you_dl_imgs', action='store_true')
     parser.add_argument('--save_plutchik_color_imgs', dest='save_plutchik_color_imgs', action='store_true')
-    parser.add_argument('--ava', dest='ava', action='store_true')
+    parser.add_argument('--ava_to_tfrecords', dest='ava_to_tfrecords', action='store_true')
 
     cmdline = parser.parse_args()
 
@@ -645,5 +753,5 @@ if __name__ == '__main__':
         retrieve_you_imemo_imgs()
     elif cmdline.save_plutchik_color_imgs:
         save_plutchik_color_imgs()
-    elif cmdline.ava:
-        ava()
+    elif cmdline.ava_to_tfrecords:
+        ava_to_tfrecords()
