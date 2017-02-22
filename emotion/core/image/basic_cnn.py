@@ -13,13 +13,18 @@ class BasicVizsentCNN(object):
         self.output_dim = output_dim
         self.imgs = imgs
         self.dropout_keep = dropout_keep
-        self.batch_size = self.imgs.get_shape().as_list()[0]        # variable sized batch
+        # self.batch_size = tf.shape(self.imgs)[0]                # variable sized batch
 
-        # Create graph
-        # Input
+        # shape must be a list of intgers or a TensorShape
+        # Since batch_size is unknown (i.e. it's a tensor, create a tensor with the desired shape and then call
+        # get_shape() in order to get a TensorShape
+        # dummy_img = tf.zeros(tf.concat(0, [[self.batch_size], [self.img_h, self.img_w, 3]]))
         self.img_batch = tf.placeholder_with_default(self.imgs,
-            shape=[self.batch_size, self.img_h, self.img_w, 3], name='img_batch')
-            # shape=[None, self.img_h, self.img_w, 3], name='img_batch')
+            # shape=dummy_img.get_shape(), name='img_batch')
+            shape=[None, self.img_h, self.img_w, 3], name='img_batch')
+            # shape=[self.batch_size, self.img_h, self.img_w, 3], name='img_batch'))
+
+        self.batch_size = tf.shape(self.img_batch)[0]
 
         # Rest of graph
         with tf.variable_scope('convrelupool1'):
@@ -38,7 +43,10 @@ class BasicVizsentCNN(object):
 
         with tf.variable_scope('fc'):
             self.dropout_keep = tf.constant(self.dropout_keep)
-            self.reshaped = tf.reshape(self.norm2, [self.batch_size, -1])     # (B,  _)
+            # self.reshaped = tf.reshape(self.norm2, [self.batch_size, -1])     # (B,  _)
+            self.norm2_shape_list = self.norm2.get_shape().as_list()    # (?,a,b,256) (? because batch_size is dynamic)
+            self.reshape_dim = self.norm2_shape_list[1] *  self.norm2_shape_list[2] * self.norm2_shape_list[3]
+            self.reshaped = tf.reshape(self.norm2, [self.batch_size, self.reshape_dim])
             self.dropout0 = tf.nn.dropout(self.reshaped, self.dropout_keep)
             self.fc1 = self.fc(self.dropout0, 512, '1')             # (B, 512)
             self.relu1 = tf.nn.tanh(self.fc1)
@@ -75,18 +83,22 @@ class BasicVizsentCNN(object):
         """
         x: can be 1D (dim1, ) or 2D (dim1, dim2)
             can be numpy array (maybe if we're feeding in to feed_dict) or tensor
+        x:
+        output_dim: int
         squeeze: squeezes output. Can be useful for final FC layer to produce probabilities for each class
 
         Returns x*w + b of dim (dim1, output_dim)
         """
-        shape = self.get_shape(x)
-        if len(shape) == 1:
-            input_dim = shape[0]
-            x = tf.reshape(x, [1, -1])  # (dim1, ) -> (1, dim1)
-        if len(shape) == 2:
-            input_dim = shape[1]
-        if len(shape) > 2:
-            raise Exception ('Shape issues')
+        # shape = self.get_shape(x)
+        # if len(shape) == 1:
+        #     input_dim = shape[0]
+        #     x = tf.reshape(x, [1, -1])  # (dim1, ) -> (1, dim1)
+        # if len(shape) == 2:
+        #     input_dim = shape[1]
+        # if len(shape) > 2:
+        #     raise Exception ('Shape issues')
+
+        input_dim = x.get_shape()[1]
 
         w_name = '{}_w'.format(name)
         b_name = '{}_b'.format(name)

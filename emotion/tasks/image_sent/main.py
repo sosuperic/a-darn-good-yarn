@@ -44,6 +44,8 @@ if __name__ == '__main__':
                         help='use 1.0 when testing -- tensorflow uses keep_prob')
     parser.add_argument('--weight_classes', dest='weight_classes', action='store_true', default=False,
                         help='weight classes for class imbalance')
+    parser.add_argument('--balance', dest='balance', action='store_true', default=False,
+                        help='balance dataset by up/downsamping, currently only works with obj=sent_biclass')
 
     # Job specific training params
     parser.add_argument('-lr', dest='lr', type=float, default=None, help='learning rate')

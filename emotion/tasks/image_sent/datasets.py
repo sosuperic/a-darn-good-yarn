@@ -335,10 +335,37 @@ class SentibankDataset(Dataset):
             img_label_id_pred_list, batch_size=self.params['batch_size'], capacity=capacity,
             min_after_dequeue=min_after_dequeue)
 
+        if self.params['balance']:
+            if self.params['obj'] == 'sent_biclass':
+                # About 2:1 ratio of positives to negatives, so only take half of positives
+                neg_match = tf.to_int32(tf.equal(label_batch, [0]))              # [0,1,0,0,1]
+                pos_match = tf.to_int32(tf.equal(label_batch, [1]))
+                num_neg = tf.reduce_sum(neg_match)
+                num_pos = tf.reduce_sum(pos_match)
+                neg_match = tf.nn.top_k(neg_match, k=label_batch.get_shape().as_list()[0]).indices # sort indices [1,4,0,2,3]
+                pos_match = tf.nn.top_k(pos_match, k=label_batch.get_shape().as_list()[0]).indices
+
+                neg_imgs = tf.slice(tf.gather(img_batch, neg_match), [0,0,0,0],
+                                    [num_neg, self.params['img_crop_w'], self.params['img_crop_h'], 3])
+                pos_imgs = tf.slice(tf.gather(img_batch, pos_match), [0,0,0,0],
+                                    [num_pos / 2 + 1, self.params['img_crop_w'], self.params['img_crop_h'], 3])
+                neg_labels = tf.slice(tf.gather(label_batch, neg_match), [0], [num_neg])
+                pos_labels = tf.slice(tf.gather(label_batch, pos_match), [0], [num_pos / 2 + 1])
+                neg_ids = tf.slice(tf.gather(id_batch, neg_match), [0], [num_neg])
+                pos_ids = tf.slice(tf.gather(id_batch, pos_match), [0], [num_pos / 2 + 1])
+                neg_preds = tf.slice(tf.gather(pred_batch, neg_match), [0], [num_neg])
+                pos_preds = tf.slice(tf.gather(pred_batch, pos_match), [0], [num_pos / 2 + 1])
+
+                img_batch = tf.concat(0, [neg_imgs, pos_imgs])
+                label_batch = tf.concat(0, [neg_labels, pos_labels])
+                id_batch = tf.concat(0, [neg_ids, pos_ids])
+                pred_batch = tf.concat(0, [neg_preds, pos_preds])
+
 
         if self.params['prog_finetune']:    # use pred_batch
+            pass
             # img_batch, label_batch, id_batch, pred_batch = filter...
-            2
+
 
         return img_batch, label_batch, id_batch, pred_batch
 

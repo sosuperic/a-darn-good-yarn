@@ -74,9 +74,6 @@ class Network(object):
                     self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
                     self.logger.info('................... -- Acc: {}'.format(acc_val))
 
-                    # print tmp_ids
-                    # print tmp_labels
-
                     if self.params['obj'] == 'bc':
                         self.logger.info('................. -- Top-5 Acc: {}'.format(top5_acc_val))
                         self.logger.info('................. -- Top-10 Acc: {}'.format(top10_acc_val))
@@ -405,7 +402,6 @@ class Network(object):
         self.logger.info('Making {} model'.format(self.params['arch']))
         if self.params['arch'] == 'basic_cnn':
             model = BasicVizsentCNN(
-                # batch_size=self.params['batch_size'],
                                     img_w=self.params['img_crop_w'],
                                     img_h=self.params['img_crop_h'],
                                     output_dim=self.output_dim,
@@ -455,7 +451,9 @@ class Network(object):
             class_weights = tf.cast(tf.constant(label2count), tf.float32)
 
         label_batch = self.tr_label_batch if self.params['mode'] == 'train' else self.te_label_batch
-        label_batch_op = tf.placeholder_with_default(label_batch, shape=[self.params['batch_size']],
+
+        label_batch_op = tf.placeholder_with_default(label_batch,
+                                                     shape=[None],
                                                      name='label_batch')
 
         if self.params['obj'] == 'sent_reg':
