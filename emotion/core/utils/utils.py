@@ -21,8 +21,8 @@ VID_EXTS += [fmt.upper() for fmt in VID_EXTS]
 # These are the files to use for emotional curve prediction
 # VIZ_SENT_PRED_FN = 'sent_biclass.csv' if os.path.abspath('.').startswith('/Users/eric') else 'sent_biclass_19.csv'
 VIZ_SENT_PRED_FN = 'sent_biclass_19.csv'
-# AUDIO_SENT_PRED_FN = 'audio-valence_reg_4.csv'
-AUDIO_SENT_PRED_FN = 'audio-valence_class_2.csv'
+AUDIO_SENT_PRED_FN = 'audio-valence_class_70.csv'
+# AUDIO_SENT_PRED_FN = 'audio-valence_class_69.csv'
 
 
 # CMU Movie Summary path
