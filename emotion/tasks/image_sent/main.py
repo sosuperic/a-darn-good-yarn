@@ -15,6 +15,10 @@ if __name__ == '__main__':
     parser.add_argument('--debug', dest='debug', action='store_true', default=False,
                         help='only use valid set so speed up loading (dont load train')
     parser.add_argument('-ds', '--dataset', dest='dataset', default='Sentibank', help='Sentibank,MVSO,you_imemo')
+    parser.add_argument('--tboard_debug', dest='tboard_debug',
+                        action='store_true', help='Save sumamries for histograms of weights and gradients, img batch;'
+                                                  'slows down training considerably')
+    parser.add_argument('--timeline', dest='timeline', action='store_true')
     parser.add_argument('--min_bc_cs', dest='min_bc_class_size', type=int, default=None,
                         help='when obj is bc, only use biconcepts if there is at least min_bc_cs images')
     parser.add_argument('--sent_neutral_absval', dest='sent_neutral_absval', type=float, default=None,
@@ -33,7 +37,7 @@ if __name__ == '__main__':
     # Basic params for which job (architecture, classification goal) we're running
     # This corresponds to the training parameters set in config.yaml
     parser.add_argument('-a', '--arch', dest='arch', default='basic_cnn',
-                        help='what architecture to use: basic_cnn,vgg,vgg_finetune,alexnet')
+                        help='what architecture to use: basic_cnn,vgg,vgg_finetune,alexnet,basic_plus_cnn')
     parser.add_argument('-obj', dest='obj', default='sent_biclass',
                         help='What to predict: sent_reg,sent_biclass,sent_triclass,emo,bc')
 

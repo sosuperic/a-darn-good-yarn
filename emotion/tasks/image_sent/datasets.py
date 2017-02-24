@@ -284,10 +284,10 @@ class SentibankDataset(Dataset):
     def read_and_decode(self, input_queue):
         """Read tfrecord and decode into tensors"""
         reader = tf.TFRecordReader()
-        _, serialized_example = reader.read(input_queue)
-        features = tf.parse_single_example(
-            serialized_example,
-            features={
+        # _, serialized_example = reader.read(input_queue)
+        _, serialized_examples = reader.read_up_to(input_queue, self.params['batch_size'])
+
+        features = tf.parse_example(serialized_examples, {
                 'id': tf.FixedLenFeature([], tf.string),
                 'h': tf.FixedLenFeature([], tf.int64),
                 'w': tf.FixedLenFeature([], tf.int64),
@@ -298,42 +298,57 @@ class SentibankDataset(Dataset):
                 'emo': tf.FixedLenFeature([], tf.int64),
                 'bc': tf.FixedLenFeature([], tf.int64)
             })
+        # 'id': [[id1], [id2]]
 
-        h = tf.cast(features['h'], tf.int32)
-        w = tf.cast(features['w'], tf.int32)
-        img = tf.decode_raw(features['img'], tf.uint8)
-        # img = tf.image.decode_jpeg(features['img'], channels=3)
-        img = tf.reshape(img, [h, w, 3])
-        img.set_shape([self.params['img_h'], self.params['img_w'], 3])
-        img = self.preprocess_img(img)
-        label = tf.cast(features[self.params['obj']], tf.int32)
-        id = features['id']
-        pred = 0.0                          # placeholder
+        h = tf.cast(self.params['img_h'], tf.int32)
+        w = tf.cast(self.params['img_w'], tf.int32)
 
-        if self.params['prog_finetune']:
-            # id = tf.decode_raw()
-            pred = self.id2pred[id]
+        def decode_img(img_raw, h=h, w=w):
+            img = tf.decode_raw(img_raw, tf.uint8)
+            img = tf.reshape(img, [h, w, 3])
+            img.set_shape([self.params['img_h'], self.params['img_w'], 3])
+            img = self.preprocess_img(img)
+            return img
 
-        if self.params['obj'] == 'bc':
-            label = tf.as_string(label)
-            label = self.label_table.lookup(label)
+        def decode_label(label):
             label = tf.cast(label, tf.int32)
+            if self.params['obj'] == 'bc':
+                label = tf.as_string(label)
+                label = self.label_table.lookup(label)
+                label = tf.cast(label, tf.int32)
+            return label
 
-        return img, label, id, pred
+        def decode_pred(label):
+            # Just use label as a dummy
+            # if self.params['prog_finetune']:
+            #     pred = self.id2pred[id]
+            #     pass
+            return tf.cast(0.0, tf.float32)
+
+        imgs = tf.map_fn(decode_img, features['img'], dtype=tf.float32,
+                          back_prop=False, parallel_iterations=10)
+        labels = tf.map_fn(decode_label, features[self.params['obj']], dtype=tf.int32,
+                          back_prop=False, parallel_iterations=10)
+        ids = features['id']
+        preds = tf.map_fn(decode_pred, features['id'], dtype=tf.float32,
+                          back_prop=False, parallel_iterations=10)
+
+        return imgs, labels, ids, preds
 
     def input_pipeline(self, files_list, num_read_threads=5):
         """Create img and label tensors from string input producer queue"""
         input_queue = tf.train.string_input_producer(files_list, shuffle=True)
-        # input_queue = tf.train.string_input_producer(files_list, shuffle=True, num_epochs=self.params['epochs'])
 
-        # TODO: where do I get num_read_threads
-        with tf.device('/cpu:0'):           # save gpu for matrix ops
-            img_label_id_pred_list = [self.read_and_decode(input_queue) for _ in range(num_read_threads)]
+        imgs_labels_ids_preds = [self.read_and_decode(input_queue) for _ in range(num_read_threads)]
+
         min_after_dequeue = 10000
         capacity = min_after_dequeue + 3 * self.params['batch_size']
+
         img_batch, label_batch, id_batch, pred_batch = tf.train.shuffle_batch_join(
-            img_label_id_pred_list, batch_size=self.params['batch_size'], capacity=capacity,
-            min_after_dequeue=min_after_dequeue)
+        # img_batch, label_batch, id_batch = tf.train.shuffle_batch_join(
+            imgs_labels_ids_preds,
+            batch_size=self.params['batch_size'], capacity=capacity,
+            min_after_dequeue=min_after_dequeue, enqueue_many=True)
 
         if self.params['balance']:
             if self.params['obj'] == 'sent_biclass':
@@ -366,7 +381,6 @@ class SentibankDataset(Dataset):
             pass
             # img_batch, label_batch, id_batch, pred_batch = filter...
 
-
         return img_batch, label_batch, id_batch, pred_batch
 
     def setup_graph(self):
@@ -377,6 +391,7 @@ class SentibankDataset(Dataset):
             self.files_list = self.get_tfrecords_files_list()
             for name in ['train', 'valid', 'test']:
                 img_batch, label_batch, id_batch, pred_batch = self.input_pipeline(self.files_list[name])
+                # img_batch, label_batch, id_batch = self.input_pipeline(self.files_list[name])
                 self.splits[name]['img_batch'] = img_batch
                 self.splits[name]['label_batch'] = label_batch
                 self.splits[name]['id_batch'] = id_batch
@@ -385,7 +400,8 @@ class SentibankDataset(Dataset):
         elif self.params['mode'] == 'test':
             self.files_list = self.get_tfrecords_files_list()
             img_batch, label_batch, id_batch, pred_batch = self.input_pipeline(self.files_list)
-            return img_batch, label_batch
+            # img_batch, label_batch, id_batch = self.input_pipeline(self.files_list)
+            return img_batch, label_batch, id_batch
 
     def preprocess_img(self, img):
         img = super(SentibankDataset, self).preprocess_img(img)

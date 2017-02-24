@@ -5,11 +5,13 @@ import numpy as np
 import os
 import pickle
 import tensorflow as tf
+from tensorflow.python.client import timeline
 
 from datasets import get_dataset
 from prepare_data import SENT_BICLASS_LABEL2INT, SENT_TRICLASS_LABEL2INT, SENTIBANK_EMO_LABEL2INT, MVSO_EMO_LABEL2INT, \
     get_bc2idx
 from core.image.basic_cnn import BasicVizsentCNN
+from core.image.basic_plus_cnn import BasicPlusCNN
 from core.image.vgg.vgg16 import vgg16
 from core.image.modified_alexnet import ModifiedAlexNet
 from core.utils.utils import get_optimizer, load_model, save_model, setup_logging, scramble_img, scramble_img_recursively
@@ -35,6 +37,7 @@ class Network(object):
             # Get model
             self.output_dim = self.dataset.get_output_dim()
             model = self._get_model(sess, tr_img_batch)
+            self.model = model
 
             # Loss
             self._get_loss(model)
@@ -48,6 +51,8 @@ class Network(object):
             # train_step = optimizer.apply_gradients(grads_and_vars=capped_grads_and_vars)
 
             # Summary ops and writer
+            if self.params['tboard_debug']:
+                self.img_batch_for_summ = tr_img_batch
             summary_op = self._get_summary_ops()
             tr_summary_writer = tf.summary.FileWriter(self.params['ckpt_dirpath'] + '/train', graph=tf.get_default_graph())
             va_summary_writer = tf.summary.FileWriter(self.params['ckpt_dirpath'] + '/valid')
@@ -62,14 +67,21 @@ class Network(object):
                 # Normally slice_input_producer should have epoch parameter, but it produces a bug when set. So,
                 num_tr_batches = self.dataset.get_num_batches('train')
                 for j in range(num_tr_batches):
+                    # Compute CPU GPU usage timeline
+                    compute_timeline = self.params['timeline'] and (j % 100 == 0)
+                    run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE) if compute_timeline else None
+                    run_metadata = tf.RunMetadata() if compute_timeline else None
+
                     if self.params['obj'] == 'bc':       # same thing but with topk accuracy
                         _, imgs, last_fc, loss_val, acc_val, top5_acc_val, top10_acc_val, summary = sess.run(
                             [train_step, tr_img_batch, model.last_fc, self.loss, self.acc,
                              # splits['train']['id_batch'], self.tr_label_batch,
-                             self.top5_acc, self.top10_acc, summary_op])
+                             self.top5_acc, self.top10_acc, summary_op],
+                            options=run_options, run_metadata=run_metadata)
                     else:
                         _, imgs, last_fc, loss_val, acc_val, summary = sess.run(
-                            [train_step, tr_img_batch, model.last_fc, self.loss, self.acc, summary_op])
+                            [train_step, tr_img_batch, model.last_fc, self.loss, self.acc, summary_op],
+                            options=run_options, run_metadata=run_metadata)
 
                     self.logger.info('Train minibatch {} / {} -- Loss: {}'.format(j, num_tr_batches, loss_val))
                     self.logger.info('................... -- Acc: {}'.format(acc_val))
@@ -85,9 +97,19 @@ class Network(object):
                     # if j == 10:
                     #     break
 
+
+
                     # Save (potentially) before end of epoch just so I don't have to wait
                     if j % 100 == 0:
                         save_model(sess, saver, self.params, i, self.logger)
+
+                        # Create the Timeline object, and write it to a json
+                        if self.params['timeline']:
+                            tl = timeline.Timeline(run_metadata.step_stats)
+                            ctf = tl.generate_chrome_trace_format()
+                            timeline_outpath = os.path.join(self.params['ckpt_dirpath'], 'timeline.json')
+                            with open(timeline_outpath, 'wb') as tfp:
+                                tfp.write(ctf)
 
                 # Evaluate on validation set (potentially)
                 if (i+1) % self.params['val_every_epoch'] == 0:
@@ -134,13 +156,14 @@ class Network(object):
                 num_batches = self.dataset.get_num_batches('train')
                 id2pred = {}
             else:
-                te_img_batch, self.te_label_batch = self.dataset.setup_graph()
+                te_img_batch, self.te_label_batch, te_id_batch = self.dataset.setup_graph()
                 num_batches = self.dataset.get_num_batches('test')
 
             # Get model
             self.logger.info('Building graph')
             self.output_dim = self.dataset.get_output_dim()
             model = self._get_model(sess, te_img_batch)
+            self.model = model
 
             # Loss
             self._get_loss(model)
@@ -187,6 +210,10 @@ class Network(object):
                         [model.probs, self.loss, self.acc, self.top5_acc, self.top10_acc, summary_op])
                 else:
                     loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op])
+                    labels, ids, last_fc, probs = sess.run([self.te_label_batch, te_id_batch, model.last_fc, model.probs])
+                    for i in range(len(probs)):
+                        print probs[i], labels[i], ids[i]
+                    # print probs[0]
 
                 overall_correct += int(acc_val * te_img_batch.get_shape().as_list()[0])
                 overall_num += te_img_batch.get_shape().as_list()[0]
@@ -239,6 +266,7 @@ class Network(object):
             self.logger.info('Building graph')
             self.output_dim = self.dataset.get_output_dim()
             model = self._get_model(sess, te_img_batch)
+            self.model = model
 
             # Loss
             self._get_loss(model)
@@ -407,6 +435,15 @@ class Network(object):
                                     output_dim=self.output_dim,
                                     imgs=img_batch,
                                     dropout_keep=self.params['dropout'])
+        elif self.params['arch'] == 'basic_plus_cnn':
+            is_training = True if self.params['mode'] == 'train' else False
+            model = BasicPlusCNN(img_w=self.params['img_crop_w'],
+                                 img_h=self.params['img_crop_h'],
+                                 output_dim=self.output_dim,
+                                 imgs=img_batch,
+                                 dropout_keep=self.params['dropout'],
+                                 bn_decay=self.params['bn_decay'],
+                                 is_training=is_training)
         elif 'vgg' in self.params['arch']:
             load_weights = True if self.params['arch'] == 'vgg_finetune' else False
             model = vgg16(batch_size=self.params['batch_size'],
@@ -463,7 +500,7 @@ class Network(object):
             labels_onehot = tf.one_hot(label_batch_op, self.output_dim)     # (batch_size, num_classes)
 
             logits = tf.mul(model.last_fc, class_weights) if self.params['weight_classes'] else model.last_fc
-            self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits, labels_onehot))
+            self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=labels_onehot, logits=logits))
 
             # Accuracy
             acc = tf.equal(tf.cast(tf.argmax(model.last_fc, 1), tf.int32), label_batch_op)
@@ -489,13 +526,23 @@ class Network(object):
             self.top5_acc_summary = tf.summary.scalar('top5_accuracy', self.top5_acc)
             self.top10_acc_summary = tf.summary.scalar('top10_accuracy', self.top10_acc)
 
-        # Weights and gradients. TODO: why doesn't this work for test? Type error
-        for var in tf.trainable_variables():
-            tf.summary.histogram(var.op.name, var)
-        for grad, var in self.grads_and_vars:
-            tf.summary.histogram(var.op.name+'/gradient', grad)
+        # Weights and gradients
+        if self.params['tboard_debug']:
+            for var in tf.trainable_variables():
+                tf.summary.histogram(var.op.name, var)
+            for grad, var in self.grads_and_vars:
+                tf.summary.histogram(var.op.name+'/gradient', grad)
+
+            if hasattr(self.model, 'activations'):
+                for act, name in self.model.activations:
+                    tf.summary.histogram(name, act)
+
+        # Image
+        if hasattr(self, 'img_batch_for_summ'):
+            tf.summary.image('img_batch', self.img_batch_for_summ)
 
         summary_op = tf.summary.merge_all()
+
         return summary_op
 
     def _initialize(self, sess):
