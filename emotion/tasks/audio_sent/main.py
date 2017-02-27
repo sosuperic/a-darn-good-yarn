@@ -50,6 +50,9 @@ if __name__ == '__main__':
                              'used to with mode=predict')
     parser.add_argument('--stride', type=int, default=20, dest='stride',
                         help='number of seconds to stride when making predictions')
+    parser.add_argument('--dropout_conf', dest='dropout_conf', action='store_true',
+                        help='Create confidence intervals by predicting each item batch_size times and calculating '\
+                        'mean and std of predictions')
 
     # Bookkeeping, checkpointing, etc.
     parser.add_argument('--save_every_epoch', dest='save_every_epoch', type=int, default=None,
@@ -86,13 +89,16 @@ if __name__ == '__main__':
         network.train()
 
     elif params['mode'] == 'test':
+        params['dropout'] = 1.0
         params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
         network = Network(params)
         network.test()
 
     elif params['mode'] == 'predict':
+        params['dropout'] = 0.5 if params['dropout_conf'] else 1.0
+        # params['dropout'] = 1.0
+        params['batch_size'] = params['batch_size'] if (params['dropout_conf']) else 1
         params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
-        params['batch_size'] = 1
         network = Network(params)
         network.predict()
 

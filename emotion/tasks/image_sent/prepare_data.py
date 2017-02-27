@@ -8,6 +8,7 @@ import os
 import pickle
 from PIL import Image
 from pprint import pprint
+import random
 import re
 import tensorflow as tf
 import urllib
@@ -374,6 +375,202 @@ def write_VSO_to_tfrecords(dataset, split=[0.8, 0.1, 0.1]):
     va_writer.close()
     te_writer.close()
 
+# Writing images to tfrecords
+def VSO_bc_class_to_tfrecords(dataset, split=[0.8, 0.1, 0.1], min_bc_cs=120):
+    """
+    Create tfrecord files for train,valid,test for the task of bc classification. In debugging the classification,
+    I believe that there may not be enough shuffling, since the previously saved tfrecords from the above
+    function are for each bc, e.g. bright_sun.tfrecords. Therefore, string_input_producer shuffles the files,
+    but each batch will only contain records from x bc's. Therefore, we want to make tfrecords 0.tfrecords, 1.tfrecords,
+    etc. that say each contain 10,000 images. This still won't be 'perfect' shuffling, but it'll be better.
+    """
+    # Set dataset
+    if dataset == 'Sentibank':
+         bc_path = SENTIBANK_BC_PATH
+         dataset_path = SENTIBANK_FLICKR_PATH
+    elif dataset == 'MVSO':
+        bc_path = MVSO_BC_PATH
+        dataset_path = MVSO_PATH
+    else:
+        print 'unknown dataset: {}'.format(dataset)
+
+    # Functions for writing tfrecords
+    def _bytes_feature(value):
+        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+    def _int64_feature(value):
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+
+    def _float_feature(value):
+        return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+
+    # Make directory to hold new tfrecords
+    new_tfrecords_path = os.path.join(dataset_path, 'tfrecords_bc')
+    if not os.path.exists(new_tfrecords_path):
+        os.mkdir(new_tfrecords_path)
+    for split in ['train', 'valid', 'test']:
+        if not os.path.exists(os.path.join(new_tfrecords_path, split)):
+            os.mkdir(os.path.join(new_tfrecords_path, split))
+
+    # Note: probably would be faster to read images from existing tfrecords, but I'm not sure the best way to shuffle
+    # them (i.e. would need to store pointer to current index in each bc, re-open that bc tfrecords file, etc.).
+    # So, let's just recreate from the images.
+    # 1) Get all relevant filepaths (relevant according to bc) for each split
+    # 2) Shuffle those filepaths
+    # 3) Go through and write for each split
+    split2fps = defaultdict(list)
+    num_bc = 0
+
+    for bc in [d for d in os.listdir(bc_path) if not d.startswith('.')]:
+        # Get filepaths of each image
+        cur_bc_path = os.path.join(bc_path, bc)
+        img_fns = [f for f in os.listdir(cur_bc_path) if f.endswith('jpg')]
+        img_fps = [os.path.join(cur_bc_path, fn) for fn in img_fns]
+
+        # Split if not enough images
+        if len(img_fps) < min_bc_cs:
+            continue
+        else:
+            train_endidx = int(split[0] * len(img_fps))
+            valid_endidx = train_endidx + int(split[1] * len(img_fps))
+            split2fps['train'].extend(img_fps[0:train_endidx])
+            split2fps['valid'].extend(img_fps[train_endidx:valid_endidx])
+            split2fps['test'].extend(img_fps[valid_endidx:])
+            num_bc += 1
+
+    # Print some things
+    for split, fps in split2fps.items():
+        print split, len(fps)
+    print 'Number bc with enough images: {}'.format(num_bc)
+
+    # Get lookups for each objective in order to label
+    bc2idx = get_bc2idx(dataset)
+
+    # Go through each split, shuffle img fps, and try to write example
+    for split, fps in split2fps.items():
+        num_imgs_added = 0
+        tfrecords_fp = os.path.join(new_tfrecords_path, split, '0.tfrecords')
+        writer = tf.python_io.TFRecordWriter(tfrecords_fp)
+
+        print tfrecords_fp
+        # Shuffle fps to mix up bc's
+        random.shuffle(fps)
+
+        for img_fp in fps:
+            try:
+                # Get image
+                img = Image.open(img_fp)
+                if img.mode != 'RGB' or img.format != 'JPEG':   # e.g. black and white (mode == 'L')
+                    continue
+                img = np.array(img)
+
+                bc = os.path.dirname(img_fp).split('/')[-1]
+                img_id = os.path.basename(img_fp).split('.')[0]
+                id = bc + '/' + img_id
+                h, w = img.shape[0], img.shape[1]
+                bc_label = get_label(dataset, bc, 'bc', bc_lookup=bc2idx)
+                img_raw = img.tostring()
+
+                example = tf.train.Example(features=tf.train.Features(feature={
+                    'id': _bytes_feature(id),
+                    'h': _int64_feature(h),
+                    'w': _int64_feature(w),
+                    'img': _bytes_feature(img_raw),
+                    'bc': _int64_feature(bc_label)}))
+                writer.write(example.SerializeToString())
+
+                num_imgs_added += 1
+                # Update tfrecords file
+                if (num_imgs_added % 10000 == 0):
+                    print 'Split: {}, num_imgs_added: {}'.format(split, num_imgs_added)
+                    writer.close()
+                    tfrecords_fp = os.path.join(new_tfrecords_path, split, '{}.tfrecords'.format(num_imgs_added / 10000))
+                    writer = tf.python_io.TFRecordWriter(tfrecords_fp)
+            except Exception as e:
+                print img_fp, e
+
+def precompute_and_save_bc_VSO_stats(dataset):
+    """
+    Save split2n, mean (train), std (train), num_bc_classes, bc_labelidx2filteredidx for use in datasets.py
+    NOTE: could've saved all these while originally saving tfrecords in above function...
+    """
+    # Set dataset
+    if dataset == 'Sentibank':
+         bc_path = SENTIBANK_BC_PATH
+         dataset_path = SENTIBANK_FLICKR_PATH
+    elif dataset == 'MVSO':
+        bc_path = MVSO_BC_PATH
+        dataset_path = MVSO_PATH
+    else:
+        print 'unknown dataset: {}'.format(dataset)
+
+    bc_tfrecords_path = os.path.join(dataset_path, 'tfrecords_bc')
+
+    split2n = defaultdict(int)
+    bc_classes = set()
+    mean = np.zeros(3)
+    std = np.zeros(3)
+
+    for split in ['train', 'valid', 'test']:
+        split_path = os.path.join(bc_tfrecords_path, split)
+        for record_fn in os.listdir(split_path):
+            record_fp = os.path.join(split_path, record_fn)
+            it = tf.python_io.tf_record_iterator(path=record_fp)
+            print record_fp
+            for str_record in it:
+                split2n[split] += 1
+
+                example = tf.train.Example()
+                example.ParseFromString(str_record)
+                id = (example.features.feature['id'].bytes_list.value[0])
+                bc = id.split('/')[0]
+                label = (example.features.feature['bc'].int64_list.value[0])
+                bc_classes.add((bc, label))
+
+                # Calculate mean and std on training set
+                if split == 'train':
+                    img_str = (example.features.feature['img'].bytes_list.value[0])
+                    img_1d = np.fromstring(img_str, dtype=np.uint8)
+                    height = int(example.features.feature['h'].int64_list.value[0])
+                    width = int(example.features.feature['w'].int64_list.value[0])
+                    reconstructed_img = img_1d.reshape((height, width, 3))
+                    reconstructed_img = reconstructed_img.astype(np.float32) / (256.0)   # convert to [0,1)
+
+                    # Running average: new average = old average * (n-c)/n + sum of new value/n).
+                    # Where n = total count, m = count in this update
+                    img_mean, img_std = np.zeros(3), np.zeros(3)
+                    for c in range(3):
+                        img_mean[c] = reconstructed_img[:,:,c].mean()
+                        img_std[c] = reconstructed_img[:,:,c].std()
+                    n = split2n['train']
+                    mean = (mean * (n-1) / float(n)) + (img_mean / float(n))
+                    std = (std * (n-1) / float(n)) + (img_std / float(n))
+
+    # Finish calculating
+    num_bc_classes = len(bc_classes)
+    bc_labelidx2filteredidx = {}
+    for i, bc_label in enumerate(bc_classes):
+        bc_labelidx2filteredidx[int(bc_label[1])] = i
+
+    # Print stats
+    print bc_labelidx2filteredidx
+    print split2n
+    print mean
+    print std
+    print num_bc_classes
+
+    # Save
+    with open(os.path.join(bc_tfrecords_path, 'split2n.pkl'), 'wb') as f:
+        pickle.dump(split2n, f, protocol=2)
+    with open(os.path.join(bc_tfrecords_path, 'mean.pkl'), 'wb') as f:
+        pickle.dump(mean, f, protocol=2)
+    with open(os.path.join(bc_tfrecords_path, 'std.pkl'), 'wb') as f:
+        pickle.dump(std, f, protocol=2)
+    with open(os.path.join(bc_tfrecords_path, 'num_bc_classes.pkl'), 'wb') as f:
+        pickle.dump(num_bc_classes, f, protocol=2)
+    with open(os.path.join(bc_tfrecords_path, 'bc_labelidx2filteredidx.pkl'), 'wb') as f:
+        pickle.dump(bc_labelidx2filteredidx, f, protocol=2)
+
 def get_label(dataset, bc, obj, bc_lookup=None, sent_neutral_absval=None):
     """
     Return label from bi_concept string according to the objective (sentiment, emotion, biconcept)
@@ -708,6 +905,61 @@ def ava_to_tfrecords(delta=0.67, split=[0.8,0.1,0.1]):
     with open(os.path.join(AVA_PATH, 'delta_{}_label2count.json'.format(delta)), 'wb') as fp:
         json.dump(label2count, fp)
 
+def save_ava_n_channel_mean_std(delta=0.67):
+    """Save channel-wise mean and stddev so we can standardize"""
+    split2n, mean, std = defaultdict(int), np.zeros(3), np.zeros(3)
+
+    # Make directory to save
+    out_dir = os.path.join(AVA_PATH, 'n_channelmeanstd')
+    if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
+
+    # Iterate through tfrecords
+    tfrecords_dir = os.path.join(AVA_PATH, 'tfrecords_{}'.format(delta), 'train')
+    for tfr in sorted(os.listdir(tfrecords_dir)):
+        tfr_path = os.path.join(tfrecords_dir, tfr)
+        print tfr_path
+
+        for str_record in tf.python_io.tf_record_iterator(tfr_path):
+            split2n['train'] += 1
+
+            example = tf.train.Example()
+            example.ParseFromString(str_record)
+            img_str = (example.features.feature['img'].bytes_list.value[0])
+            img_1d = np.fromstring(img_str, dtype=np.uint8)
+            height = int(example.features.feature['h'].int64_list.value[0])
+            width = int(example.features.feature['w'].int64_list.value[0])
+            reconstructed_img = img_1d.reshape((height, width, 3))
+            reconstructed_img = reconstructed_img.astype(np.float32) / (256.0)   # convert to [0,1)
+
+            # Running average: new average = old average * (n-c)/n + sum of new value/n).
+            # Where n = total count, m = count in this update
+            img_mean, img_std = np.zeros(3), np.zeros(3)
+            for c in range(3):
+                img_mean[c] = reconstructed_img[:,:,c].mean()
+                img_std[c] = reconstructed_img[:,:,c].std()
+            n = split2n['train']
+            mean = (mean * (n-1) / float(n)) + (img_mean / float(n))
+            std = (std * (n-1) / float(n)) + (img_std / float(n))
+
+    # Get n for valid and test
+    for split in ['valid', 'test']:
+        tfrecords_dir = os.path.join(AVA_PATH, 'tfrecords_{}'.format(delta), split)
+        for tfr in sorted(os.listdir(tfrecords_dir)):
+            tfr_path = os.path.join(tfrecords_dir, tfr)
+            for str_record in tf.python_io.tf_record_iterator(tfr_path):
+                split2n[split] += 1
+
+    print 'split2n: {}'.format(split2n)
+    print 'mean: {}'.format(mean)
+    print 'std: {}'.format(std)
+
+    with open(os.path.join(out_dir, 'split2n.pkl'), 'wb') as f:
+        pickle.dump(split2n, f, protocol=2)
+    with open(os.path.join(out_dir, 'channelmean.pkl'), 'wb') as f:
+        pickle.dump(mean, f, protocol=2)
+    with open(os.path.join(out_dir, 'channelstd.pkl'), 'wb') as f:
+        pickle.dump(std, f, protocol=2)
 
 if __name__ == '__main__':
 
@@ -721,11 +973,14 @@ if __name__ == '__main__':
     parser.add_argument('--bc2emo', dest='bc2emo', action='store_true')
     parser.add_argument('--bc2idx', dest='bc2idx', action='store_true')
     parser.add_argument('--VSO_to_tfrecords', dest='VSO_to_tfrecords', action='store_true')
+    parser.add_argument('--VSO_bc_class_to_tfrecords', dest='VSO_bc_class_to_tfrecords', action='store_true')
+    parser.add_argument('--precompute_and_save_bc_VSO_stats', dest='precompute_and_save_bc_VSO_stats', action='store_true')
     parser.add_argument('--move_bad_jpgs', dest='move_bad_jpgs', action='store_true')
     parser.add_argument('--bc_channel_mean_std', dest='bc_channel_mean_std', action='store_true')
     parser.add_argument('--you_dl_imgs', dest='you_dl_imgs', action='store_true')
     parser.add_argument('--save_plutchik_color_imgs', dest='save_plutchik_color_imgs', action='store_true')
     parser.add_argument('--ava_to_tfrecords', dest='ava_to_tfrecords', action='store_true')
+    parser.add_argument('--save_ava_n_channel_mean_std', dest='save_ava_n_channel_mean_std', action='store_true')
 
     cmdline = parser.parse_args()
 
@@ -745,6 +1000,10 @@ if __name__ == '__main__':
         pprint(get_bc2idx(cmdline.VSO_dataset))
     elif cmdline.VSO_to_tfrecords:
         write_VSO_to_tfrecords(cmdline.VSO_dataset)
+    elif cmdline.VSO_bc_class_to_tfrecords:
+        VSO_bc_class_to_tfrecords(cmdline.VSO_dataset)
+    elif cmdline.precompute_and_save_bc_VSO_stats:
+        precompute_and_save_bc_VSO_stats(cmdline.VSO_dataset)
     elif cmdline.move_bad_jpgs:
         move_bad_jpgs(cmdline.VSO_dataset)
     elif cmdline.bc_channel_mean_std:
@@ -755,3 +1014,5 @@ if __name__ == '__main__':
         save_plutchik_color_imgs()
     elif cmdline.ava_to_tfrecords:
         ava_to_tfrecords()
+    elif cmdline.save_ava_n_channel_mean_std:
+        save_ava_n_channel_mean_std()

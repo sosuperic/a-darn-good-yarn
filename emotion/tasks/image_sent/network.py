@@ -60,6 +60,14 @@ class Network(object):
             # Initialize after optimization - this needs to be done after adam
             coord, threads = self._initialize(sess)
 
+            if self.params['obj'] == 'bc':
+                # labelidx2filteredidx created by dataset
+                labelidx2filteredidx = pickle.load(open(
+                    os.path.join(self.params['ckpt_dirpath'], 'bc_labelidx2filteredidx.pkl'), 'rb'))
+                filteredidx2labelidx = {v:k for k,v in labelidx2filteredidx.items()}
+                bc2labelidx = get_bc2idx(self.params['dataset'])
+                labelidx2bc = {v:k for k,v in bc2labelidx.items()}
+
             # Training
             saver = tf.train.Saver(max_to_keep=None)
             for i in range(self.params['epochs']):
@@ -73,11 +81,23 @@ class Network(object):
                     run_metadata = tf.RunMetadata() if compute_timeline else None
 
                     if self.params['obj'] == 'bc':       # same thing but with topk accuracy
-                        _, imgs, last_fc, loss_val, acc_val, top5_acc_val, top10_acc_val, summary = sess.run(
+                        _, imgs, last_fc, loss_val, acc_val,\
+                        top10_indices, ids, labels,\
+                        top5_acc_val, top10_acc_val, summary = sess.run(
                             [train_step, tr_img_batch, model.last_fc, self.loss, self.acc,
-                             # splits['train']['id_batch'], self.tr_label_batch,
+                             self.top10_indices, splits['train']['id_batch'], self.tr_label_batch,
                              self.top5_acc, self.top10_acc, summary_op],
                             options=run_options, run_metadata=run_metadata)
+
+                        for loop_i, label_idx in enumerate(labels):
+                            print 'Actual: {}, {}, {}. {}'.format(label_idx,
+                                                                  filteredidx2labelidx[label_idx],
+                                                                  labelidx2bc[filteredidx2labelidx[label_idx]],
+                                                                  ids[loop_i])
+                            for pred_idx in top10_indices[loop_i]:
+                                print '------------> {}, {}, {}'.format(pred_idx,
+                                                                   filteredidx2labelidx[pred_idx],
+                                                                   labelidx2bc[filteredidx2labelidx[pred_idx]])
                     else:
                         _, imgs, last_fc, loss_val, acc_val, summary = sess.run(
                             [train_step, tr_img_batch, model.last_fc, self.loss, self.acc, summary_op],
@@ -185,6 +205,14 @@ class Network(object):
 
             # print sess.run(tf.trainable_variables()[0])
 
+            if self.params['obj'] == 'bc':
+                # labelidx2filteredidx created by dataset
+                labelidx2filteredidx = pickle.load(open(
+                    os.path.join(self.params['ckpt_dirpath'], 'bc_labelidx2filteredidx.pkl'), 'rb'))
+                filteredidx2labelidx = {v:k for k,v in labelidx2filteredidx.items()}
+                bc2labelidx = get_bc2idx(self.params['dataset'])
+                labelidx2bc = {v:k for k,v in bc2labelidx.items()}
+
             # Test
             overall_correct = 0
             overall_num = 0
@@ -206,8 +234,19 @@ class Network(object):
                                                               feed_dict={'img_batch:0': img_batch,
                                                                         'label_batch:0': label_batch})
                 elif self.params['obj'] == 'bc':
-                    probs, loss_val, acc_val, top5_acc_val, top10_acc_val, summary = sess.run(
-                        [model.probs, self.loss, self.acc, self.top5_acc, self.top10_acc, summary_op])
+
+                    probs, loss_val, acc_val, top5_acc_val, top10_acc_val, top10_indices,\
+                        ids, labels, summary \
+                        = sess.run(
+                        [model.probs, self.loss, self.acc, self.top5_acc, self.top10_acc,
+                         self.top10_indices, te_id_batch, self.te_label_batch, summary_op
+                         ])
+                    # probs, loss_val, acc_val, top5_acc_val, top10_acc_val, labels, summary = sess.run(
+                    #     [model.probs, self.loss, self.acc, self.top5_acc, self.top10_acc, self.te_label_batch,
+                    #      summary_op])
+
+                    for loop_idx in range(25):
+                        print probs[0][loop_idx]
                 else:
                     loss_val, acc_val, summary = sess.run([self.loss, self.acc, summary_op])
                     labels, ids, last_fc, probs = sess.run([self.te_label_batch, te_id_batch, model.last_fc, model.probs])
@@ -224,17 +263,24 @@ class Network(object):
                 if self.params['obj'] == 'bc':
                     self.logger.info('................... -- Top-5 Acc: {}'.format(top5_acc_val))
                     self.logger.info('................... -- Top-10 Acc: {}'.format(top10_acc_val))
-                self.logger.info('Overall acc: {}'.format(overall_acc))
+                self.logger.info('................... -- Overall acc: {}'.format(overall_acc))
 
                 if self.params['obj'] == 'bc':
                     top5_overall_correct += int(top5_acc_val * te_img_batch.get_shape().as_list()[0])
                     top10_overall_correct += int(top10_acc_val * te_img_batch.get_shape().as_list()[0])
-                    # print top5_acc_val, int(top5_acc_val * te_img_batch.get_shape().as_list()[0]), top5_overall_correct
-                    # print top10_acc_val, int(top10_acc_val * te_img_batch.get_shape().as_list()[0]), top10_overall_correct
                     top5_overall_acc = float(top5_overall_correct) / overall_num
                     top10_overall_acc = float(top10_overall_correct) / overall_num
-                    self.logger.info('Top5 overall acc: {}'.format(top5_overall_acc))
-                    self.logger.info('Top10 overall acc: {}'.format(top10_overall_acc))
+                    self.logger.info('................... -- Top5 overall acc: {}'.format(top5_overall_acc))
+                    self.logger.info('................... -- Top10 overall acc: {}'.format(top10_overall_acc))
+                    for loop_i, label_idx in enumerate(labels):
+                        print 'Actual: {}, {}, {}. {}'.format(label_idx,
+                                                              filteredidx2labelidx[label_idx],
+                                                              labelidx2bc[filteredidx2labelidx[label_idx]],
+                                                              ids[loop_i])
+                        for pred_idx in top10_indices[loop_i]:
+                            print '------------> {}, {}, {}'.format(pred_idx,
+                                                               filteredidx2labelidx[pred_idx],
+                                                               labelidx2bc[filteredidx2labelidx[pred_idx]])
 
                 # Write summary
                 if j % 10 == 0:
@@ -344,6 +390,79 @@ class Network(object):
 
         return vidpaths
 
+    # def predict(self):
+    #     """Predict"""
+    #     self.logger = self._get_logger()
+    #     idx2label = self.get_idx2label()
+    #
+    #     # If given path contains frames/, just predict for that one video
+    #     # Else walk through directory and predict for every folder that contains frames/
+    #     dirpaths = None
+    #     if os.path.exists(os.path.join(self.params['vid_dirpath'], 'frames')):
+    #         dirpaths = [self.params['vid_dirpath']]
+    #     else:
+    #         dirpaths = self.get_all_vidpaths_with_frames(self.params['vid_dirpath'])
+    #
+    #     with tf.Session() as sess:
+    #         # Skip if exists
+    #         # if os.path.exists(os.path.join(dirpath, 'preds', 'sent_biclass_19.csv')):
+    #         #     print 'Skip: {}'.format(dirpath)
+    #         #     continue
+    #         # Construct initial graph by using first movie as placeholder for img_batch (model requires img_batch)
+    #         self.logger.info('Building graph')
+    #         self.dataset = get_dataset(self.params, dirpaths[0])
+    #         self.output_dim = self.dataset.get_output_dim()
+    #         img_batch = self.dataset.setup_graph()
+    #         model = self._get_model(sess, img_batch)
+    #
+    #         # # Initialize
+    #         # coord, threads = self._initialize(sess)
+    #
+    #         # Restore model now that graph is complete -- loads weights to variables in existing graph
+    #         self.logger.info('Restoring checkpoint')
+    #         saver = load_model(sess, self.params)
+    #
+    #         for dirpath in dirpaths:
+    #             self.logger.info('Getting images to predict for {}'.format(dirpath))
+    #             dataset = get_dataset(self.params, dirpath)
+    #             img_batch = dataset.setup_graph()
+    #
+    #             # Initialize - have to do this here to initialize img_batch tensor for this video
+    #             coord, threads = self._initialize(sess)
+    #
+    #             # Make directory to store predictions
+    #             preds_dir = os.path.join(dirpath, 'preds')
+    #             if not os.path.exists(preds_dir):
+    #                 os.mkdir(preds_dir)
+    #
+    #             # Write to file
+    #             if self.params['load_epoch'] is not None:
+    #                 fn = '{}_{}.csv'.format(self.params['obj'], self.params['load_epoch'])
+    #             else:
+    #                 fn = '{}.csv'.format(self.params['obj'])
+    #
+    #             # Predict
+    #             with open(os.path.join(preds_dir, fn), 'w') as f:
+    #                 labels = [idx2label[i] for i in range(self.output_dim)]
+    #                 f.write('{}\n'.format(','.join(labels)))
+    #                 num_batches = dataset.get_num_batches('predict')
+    #                 for j in range(num_batches):
+    #                     last_fc, probs = sess.run([model.last_fc, model.probs],
+    #                                               feed_dict={'img_batch:0': img_batch.eval()})
+    #
+    #                     if self.params['debug']:
+    #                         print last_fc
+    #                         print probs
+    #                     for frame_prob in probs:
+    #                         frame_prob = ','.join([str(v) for v in frame_prob])
+    #                         f.write('{}\n'.format(frame_prob))
+    #
+    #         coord.request_stop()
+    #         coord.join(threads)
+    #
+    #         # # Clear previous video's graph
+    #         # tf.reset_default_graph()
+
     def predict(self):
         """Predict"""
         self.logger = self._get_logger()
@@ -387,24 +506,44 @@ class Network(object):
                 # Predict, write to file
                 idx2label = self.get_idx2label()
                 num_batches = self.dataset.get_num_batches('predict')
+                fn = self.params['obj']
                 if self.params['load_epoch'] is not None:
-                    fn = '{}_{}.csv'.format(self.params['obj'], self.params['load_epoch'])
-                else:
-                    fn = '{}.csv'.format(self.params['obj'])
+                    fn += '_{}'.format(self.params['load_epoch'])
+                if self.params['dropout_conf']:
+                    fn += '_conf{}'.format(self.params['batch_size'])
+                fn += '.csv'
 
                 with open(os.path.join(preds_dir, fn), 'w') as f:
-                    labels = [idx2label[i] for i in range(self.output_dim)]
-                    f.write('{}\n'.format(','.join(labels)))
-                    for j in range(num_batches):
-                        last_fc, probs = sess.run([model.last_fc, model.probs],
-                                                  feed_dict={'img_batch:0': img_batch.eval()})
+                    # If creating confidence intervals from dropout, each batch is one image
+                    if self.params['dropout_conf']:
+                        header = []
+                        for i in range(self.output_dim):
+                            header.extend([str(idx2label[i]) + '_mean', str(idx2label[i]) + '_std'])
+                        f.write('{}\n'.format(','.join(header)))
+                        for j in range(num_batches):
+                            last_fc, probs = sess.run([model.last_fc, model.probs],
+                                                      feed_dict={'img_batch:0': img_batch.eval()})
+                            if self.params['debug']:
+                                print last_fc
+                                print probs
+                            means = np.mean(probs, axis=0)
+                            stds = np.std(probs, axis=0)
+                            row = [item for sublst in zip(means, stds) for item in sublst]  # list comp for flatten
+                            row = ','.join([str(v) for v in row])
+                            f.write('{}\n'.format(row))
+                    else:
+                        header = [idx2label[i] for i in range(self.output_dim)]
+                        f.write('{}\n'.format(','.join(header)))
+                        for j in range(num_batches):
+                            last_fc, probs = sess.run([model.last_fc, model.probs],
+                                                      feed_dict={'img_batch:0': img_batch.eval()})
 
-                        if self.params['debug']:
-                            print last_fc
-                            print probs
-                        for frame_prob in probs:
-                            frame_prob = ','.join([str(v) for v in frame_prob])
-                            f.write('{}\n'.format(frame_prob))
+                            if self.params['debug']:
+                                print last_fc
+                                print probs
+                            for frame_prob in probs:
+                                frame_prob = ','.join([str(v) for v in frame_prob])
+                                f.write('{}\n'.format(frame_prob))
 
                 coord.request_stop()
                 coord.join(threads)
@@ -455,6 +594,8 @@ class Network(object):
                           img_batch=img_batch)
         elif self.params['arch'] == 'alexnet':
             is_training = True if self.params['mode'] == 'train' else False
+            # print is_training
+            # is_training = True
             model = ModifiedAlexNet(img_w=self.params['img_crop_w'],
                                     img_h=self.params['img_crop_h'],
                                     output_dim=self.output_dim,
@@ -507,6 +648,7 @@ class Network(object):
             self.acc = tf.reduce_mean(tf.cast(acc, tf.float32))
 
             if self.params['obj'] == 'bc':      # in top-k accuracy
+                self.top10_indices = tf.nn.top_k(model.last_fc, 10, sorted=True).indices
                 top5_acc = tf.nn.in_top_k(model.last_fc, label_batch_op, 5)
                 self.top5_acc = tf.reduce_mean(tf.cast(top5_acc, tf.float32))
                 top10_acc = tf.nn.in_top_k(model.last_fc, label_batch_op, 10)
