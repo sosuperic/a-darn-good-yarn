@@ -7,6 +7,7 @@
     <script src="../static/jslibs/dat.gui.js"></script>
     <script src="/static/jslibs/jquery.min.js"></script>
     <script src="../static/jslibs/Chart.bundle.js"></script>
+    <script src="../static/jslibs/chartjs.ext.conf.js"></script>
     <!-- <link rel="stylesheet" href="css/styles.css?v=1.0"> -->
 </head>
 
@@ -41,7 +42,7 @@
             oneVideo.dynamicRange = true;
             oneVideo.films = {};
             oneVideo.films.visualWindow = 600;
-            oneVideo.films.audioWindow = 300;
+            oneVideo.films.audioWindow = 600;
             oneVideo.films.video = data.format2titles['films'][0];
             oneVideo.shorts = {};
             oneVideo.shorts.visualWindow = 60;
@@ -340,7 +341,8 @@
                 var numSec = data.length;
                 var labels = [];
                 for (var i = 0; i < numSec; i++) {
-                  labels.push(formatSeconds(i));
+//                    labels.push(formatSeconds(i));
+                    labels.push(i);
                 }
                 return labels;
             }
@@ -353,19 +355,52 @@
             // Each object in dataset array corresponds to one line
             // e.g. one line for each emotion
             var dataset = [];
-            var COLORS = ["rgba(15, 171, 182, 0.75)", "rgba(216, 122, 21, 0.75)"];
-            var c_idx = 0;
+            var COLORS = ["rgba(15,171,182,0.75)", "rgba(216,122,21,0.75)"];
             for (var key in data.preds) {   // e.g. audio, visual
-                for (var label in data.preds[key]) {
+                if (key == 'visual') {
                     dataset.push({
-                        label: label,
-                        borderWidth: 0.1,
-                        data: downsampleTimeseries(data.preds[key][label], DOWNSAMPLE_RATE),
-                        backgroundColor: COLORS[c_idx]
+                        label: 'visual-valence',
+                        data: downsampleTimeseries(data.preds[key]['pos'], DOWNSAMPLE_RATE),
+                        borderColor: COLORS[0],
+                        backgroundColor: COLORS[0],
+                        borderWidth: 0.1
+//                        width: downsampleTimeseries(data.preds[key]['std'], DOWNSAMPLE_RATE),
+//                        fill: false
+                    });
+                } else if (key == 'audio') {
+//                    dataset.push({
+//                        label: 'audio-valence',
+////                        borderWidth: 0.1,
+//                        data: downsampleTimeseries(data.preds[key]['pos'], DOWNSAMPLE_RATE),
+//                        width: downsampleTimeseries(data.preds[key]['std'], DOWNSAMPLE_RATE),
+//                        borderColor: COLORS[1],
+//                        backgroundColor: COLORS[1],
+//                        fill: false
+//                    });
+                    dataset.push({
+                        label: 'audio-valence_lower-bound',
+                        borderWidth: 0.5,
+                        data: downsampleTimeseries(data.preds[key]['pos_lower'], DOWNSAMPLE_RATE),
+                        borderColor: COLORS[1],
+                        fill: false
+                    });
+                    dataset.push({
+                        label: 'audio-valence',
+                        borderWidth: 2.0,
+                        data: downsampleTimeseries(data.preds[key]['pos'], DOWNSAMPLE_RATE),
+                        borderColor: COLORS[1],
+                        fill: false
+                    });
+                    dataset.push({
+                        label: 'audio-valence_upper-bound',
+                        borderWidth: 0.5,
+                        data: downsampleTimeseries(data.preds[key]['pos_upper'], DOWNSAMPLE_RATE),
+                        borderColor: COLORS[1],
+                        fill: false
                     });
                 }
-                c_idx += 1;
             }
+
             // Use first set
             var firstData = data.preds[Object.keys(data.preds)[0]];
             firstData = firstData[Object.keys(firstData)[0]];
@@ -375,6 +410,7 @@
                 labels: labels,
                 datasets: dataset
             };
+            console.log(chartData);
 
             // Options
             var options = {
@@ -424,12 +460,25 @@
             if (chart) {
                 chart.destroy();
             }
-
             chart = new Chart(ctx, {
                 type: 'line',
                 data: chartData,
                 options: options
             });
+
+            // Attempt to use stripe
+//            var config = {
+//                type: 'stripe',
+//                data: chartData,
+//                options: options
+//            };
+//            var ctx = document.getElementById("chart").getContext("2d");
+////            if (chart) {
+////                chart.destroy();
+////            }
+//            chart = new Chart(ctx, config);
+//            console.log(ctx);
+//            console.log(config);
 
             // Attach handler to open vimeo for shorts
             if (datgui.oneVideo.format == 'shorts') {

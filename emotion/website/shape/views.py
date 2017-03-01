@@ -85,10 +85,16 @@ def get_preds_from_dfs(name2df_and_window):
         preds[name] = {}
         if name == 'visual':
             values = list(smooth(df.pos.values, window_len=window)) if (df is not None) else []
-            preds[name]['visual-valence'] = values
+            preds[name]['pos'] = values
+            preds[name]['std'] = [0.0 for _ in range(len(values))]
         elif name == 'audio':
-            values = list(smooth(df.Valence.values, window_len=window)) if (df is not None) else []
-            preds[name]['audio-valence'] = values
+            values = list(smooth(df.Valence_mean.values, window_len=window)) if (df is not None) else []
+            std = list(smooth(df.Valence_std.values, window_len=window)) if (df is not None) else []
+            # std = [i, std_val in enumerate(std)]
+            preds[name]['pos'] = values
+            preds[name]['std'] = std
+            preds[name]['pos_lower'] = [max(0, values[i] - std_val) for i, std_val in enumerate(std)]
+            preds[name]['pos_upper'] = [min(1, values[i] + std_val) for i, std_val in enumerate(std)]
     return preds
 
 def get_cur_vid_df_and_framepaths(cur_title):
@@ -108,7 +114,6 @@ def get_cur_vid_df_and_framepaths(cur_title):
 
     audio_preds_path = os.path.join(title2vidpath[cur_title], 'preds', AUDIO_SENT_PRED_FN)
     if os.path.exists(audio_preds_path):
-        print audio_preds_path
         cur_audio_pd_df = pd.read_csv(audio_preds_path)
     else:
         cur_audio_pd_df = None
@@ -174,9 +179,11 @@ def get_all_valid_vidpaths():
                 continue
 
             if ('frames' in os.listdir(root)) and ('preds' in os.listdir(root)):
-                nframes = len(os.listdir(os.path.join(root, 'frames')))
-                if nframes > 0:
-                    vidpaths_nframes.append([root, nframes])
+                if (AUDIO_SENT_PRED_FN in os.listdir(os.path.join(root, 'preds'))) and \
+                    (VIZ_SENT_PRED_FN in os.listdir(os.path.join(root, 'preds'))):
+                    nframes = len(os.listdir(os.path.join(root, 'frames')))
+                    if nframes > 0:
+                        vidpaths_nframes.append([root, nframes])
         return vidpaths_nframes
 
     vidpaths_nframes = []
@@ -314,7 +321,7 @@ def shape():
     cur_mp3path = get_cur_mp3path(cur_title)
     cur_vid_preds = get_preds_from_dfs(
         {'visual': {'df': cur_viz_pd_df, 'window': 600},  # window_len has to match default in html file
-        'audio': {'df': cur_audio_pd_df, 'window': 300}})
+        'audio': {'df': cur_audio_pd_df, 'window': 600}})
 
     data = {
             # One Video view

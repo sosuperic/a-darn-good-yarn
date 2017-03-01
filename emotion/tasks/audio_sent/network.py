@@ -238,13 +238,34 @@ class Network(object):
         # Load mean and std
         mean, std = self.load_meanstd()
 
-        for mp3path in mp3paths:
-            # Skip if exists
-            # if os.path.exists(os.path.join(dirpath, 'preds', 'sent_biclass_19.csv')):
-            #     print 'Skip: {}'.format(dirpath)
-            #     continue
-            start_time = time.time()
-            with tf.Session() as sess:
+
+        with tf.Session() as sess:
+            # Get model
+            self.logger.info('Creating dummy input and getting model')
+            # Feed in constant tensor as clip_batch that will get overridden by feed_dict
+            batch_shape = [self.params['batch_size']] + MELGRAM_20S_SIZE + [1]
+            with tf.variable_scope('dummy_input'):
+                self.clip_batch = tf.zeros(batch_shape)
+            # model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=True)
+            model = None
+            model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=False,
+                                    dropout=self.params['dropout'])
+
+                        # Restore model now that graph is complete -- loads weights to variables in existing graph
+            self.logger.info('Restoring checkpoint')
+            saver = load_model(sess, self.params)
+
+
+            # Initialize
+            coord, threads = self._initialize(sess)
+
+            for mp3path in mp3paths:
+                # Skip if exists
+                # if os.path.exists(os.path.join(dirpath, 'preds', 'sent_biclass_19.csv')):
+                #     print 'Skip: {}'.format(dirpath)
+                #     continue
+                start_time = time.time()
+            # with tf.Session() as sess:
                 # Get data
                 self.logger.info('Loading mp3 to predict for {}'.format(mp3path))
                 src, sr = librosa.load(mp3path, sr=None)    # uses default sample rate, which should be 12000
@@ -259,23 +280,23 @@ class Network(object):
                     num_batches = num_pts
                 else:
                     num_batches = int(math.floor(float(num_pts) / self.params['batch_size']))
+                #
+                # # Get model
+                # self.logger.info('Creating dummy input and getting model')
+                # # Feed in constant tensor as clip_batch that will get overridden by feed_dict
+                # batch_shape = [self.params['batch_size']] + MELGRAM_20S_SIZE + [1]
+                # with tf.variable_scope('dummy_input'):
+                #     self.clip_batch = tf.zeros(batch_shape)
+                # # model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=True)
+                # model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=False,
+                #                         dropout=self.params['dropout'])
+                #
+                # # Initialize
+                # coord, threads = self._initialize(sess)
 
-                # Get model
-                self.logger.info('Creating dummy input and getting model')
-                # Feed in constant tensor as clip_batch that will get overridden by feed_dict
-                batch_shape = [self.params['batch_size']] + MELGRAM_20S_SIZE + [1]
-                with tf.variable_scope('dummy_input'):
-                    self.clip_batch = tf.zeros(batch_shape)
-                # model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=True)
-                model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=False,
-                                        dropout=self.params['dropout'])
-
-                # Initialize
-                coord, threads = self._initialize(sess)
-
-                # Restore model now that graph is complete -- loads weights to variables in existing graph
-                self.logger.info('Restoring checkpoint')
-                saver = load_model(sess, self.params)
+                # # Restore model now that graph is complete -- loads weights to variables in existing graph
+                # self.logger.info('Restoring checkpoint')
+                # saver = load_model(sess, self.params)
 
                 # Make directory to store predictions
                 preds_dir = os.path.join(os.path.dirname(mp3path), 'preds')
@@ -304,16 +325,25 @@ class Network(object):
                         for k in range(self.params['batch_size']):
                             cur_batch[k] = np.expand_dims(cur_melgram, 2)
 
+                        # if j == 15:
+                        #     print cur_batch[j]
+
                         cur_batch = cur_batch.astype(np.float32, copy=False)
                         fc, outs = sess.run([model.fc, model.out], feed_dict={'clip_batch:0': cur_batch})
+                        pos_probs = [self.softmax(fc_val)[1] for fc_val in fc]  # 1 for positive, fc_val is row
+                        if j == 15:
+                            print fc, fc.shape
+                            print pos_probs
 
                         cur_melgram_s = j * self.params['stride']         # second
                         for rel_s in range(melgram_nsec):
                             cur_s = cur_melgram_s + rel_s
                             if self.params['obj'] == 'valence_class':
                                 # s2preds[cur_s].extend(outs[:,1])
-                                probs = [self.softmax(fc_val)[1] for fc_val in fc]  # 1 for positive
-                                s2preds[cur_s].extend(probs)
+                                # probs = [self.softmax(fc_val)[1] for fc_val in fc]  # 1 for positive
+                                # if j == 15:
+                                #     print pos_probs
+                                s2preds[cur_s].extend(pos_probs)
                 else:
                     for j in range(num_batches):
                         cur_batch = np.zeros(batch_shape)
@@ -363,11 +393,11 @@ class Network(object):
                 print 'Length of source signal in seconds: {}'.format(src_nsec)
                 print 'Time elapsed: {} minutes'.format((time.time() - start_time) / 60.0)
 
-                coord.request_stop()
-                coord.join(threads)
+                # coord.request_stop()
+                # coord.join(threads)
 
             # Clear previous video's graph
-            tf.reset_default_graph()
+            # tf.reset_default_graph()
 
     ####################################################################################################################
     # Helper functions
