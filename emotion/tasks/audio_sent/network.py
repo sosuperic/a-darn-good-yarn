@@ -238,7 +238,6 @@ class Network(object):
         # Load mean and std
         mean, std = self.load_meanstd()
 
-
         with tf.Session() as sess:
             # Get model
             self.logger.info('Creating dummy input and getting model')
@@ -264,140 +263,121 @@ class Network(object):
                 # if os.path.exists(os.path.join(dirpath, 'preds', 'sent_biclass_19.csv')):
                 #     print 'Skip: {}'.format(dirpath)
                 #     continue
-                start_time = time.time()
-            # with tf.Session() as sess:
-                # Get data
-                self.logger.info('Loading mp3 to predict for {}'.format(mp3path))
-                src, sr = librosa.load(mp3path, sr=None)    # uses default sample rate, which should be 12000
+                self._predict(model, mp3path, sess, batch_shape, mean, std)
 
-                # Calculate number of points given 1-D source signal
-                # Example: (l-w)/s + 1; l = 101, w = 20, s = 10
-                src_nsec = len(src) / sr
-                melgram_nsec = 20
-                num_pts = ((src_nsec - melgram_nsec) / float(self.params['stride'])) + 1      # 20 for 20 second melgram
-                num_pts = int(math.floor(num_pts))
-                if self.params['dropout_conf']:
-                    num_batches = num_pts
-                else:
-                    num_batches = int(math.floor(float(num_pts) / self.params['batch_size']))
-                #
-                # # Get model
-                # self.logger.info('Creating dummy input and getting model')
-                # # Feed in constant tensor as clip_batch that will get overridden by feed_dict
-                # batch_shape = [self.params['batch_size']] + MELGRAM_20S_SIZE + [1]
-                # with tf.variable_scope('dummy_input'):
-                #     self.clip_batch = tf.zeros(batch_shape)
-                # # model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=True)
-                # model = self._get_model(sess, self.clip_batch, self.params['bn_decay'], is_training=False,
-                #                         dropout=self.params['dropout'])
-                #
-                # # Initialize
-                # coord, threads = self._initialize(sess)
+    def _predict(self, model, mp3path, sess, batch_shape, mean, std):
 
-                # # Restore model now that graph is complete -- loads weights to variables in existing graph
-                # self.logger.info('Restoring checkpoint')
-                # saver = load_model(sess, self.params)
+        start_time = time.time()
+        # Get data
+        self.logger.info('Loading mp3 to predict for {}'.format(mp3path))
+        src, sr = librosa.load(mp3path, sr=None)    # uses default sample rate, which should be 12000
 
-                # Make directory to store predictions
-                preds_dir = os.path.join(os.path.dirname(mp3path), 'preds')
-                if not os.path.exists(preds_dir):
-                    os.mkdir(preds_dir)
+        # Calculate number of points given 1-D source signal
+        # Example: (l-w)/s + 1; l = 101, w = 20, s = 10
+        src_nsec = len(src) / sr
+        melgram_nsec = 20
+        num_pts = ((src_nsec - melgram_nsec) / float(self.params['stride'])) + 1      # 20 for 20 second melgram
+        num_pts = int(math.floor(num_pts))
+        if self.params['dropout_conf']:
+            num_batches = num_pts
+        else:
+            num_batches = int(math.floor(float(num_pts) / self.params['batch_size']))
 
-                # Get file to write predictions
-                fn = 'audio-{}'.format(self.params['obj'])
-                if self.params['load_epoch'] is not None:
-                    fn += '_{}'.format(self.params['load_epoch'])
-                if self.params['dropout_conf']:
-                    fn += '_conf{}'.format(self.params['batch_size'])
-                fn += '.csv'
+        # Make directory to store predictions
+        preds_dir = os.path.join(os.path.dirname(mp3path), 'preds')
+        if not os.path.exists(preds_dir):
+            os.mkdir(preds_dir)
 
-                # Predict
-                s2preds = defaultdict(list)         # second to predictions (list because overlap if stride < window)
-                if self.params['dropout_conf']:
-                    # Each batch is just a 20-second clip repeated batch_size times
-                    for j in range(num_batches):
-                        cur_batch = np.zeros(batch_shape)
-                        src_start_idx = j * (sr * self.params['stride'])
-                        src_end_idx = src_start_idx + (sr * melgram_nsec)
-                        cur_src = src[src_start_idx:src_end_idx]
-                        cur_melgram = compute_log_melgram_from_np(cur_src, melgram_nsec, sr, HOP_LEN, N_FFT, N_MELS)
-                        cur_melgram = (cur_melgram - mean) / std
-                        for k in range(self.params['batch_size']):
-                            cur_batch[k] = np.expand_dims(cur_melgram, 2)
+        # Get file to write predictions
+        fn = 'audio-{}'.format(self.params['obj'])
+        if self.params['load_epoch'] is not None:
+            fn += '_{}'.format(self.params['load_epoch'])
+        if self.params['dropout_conf']:
+            fn += '_conf{}'.format(self.params['batch_size'])
+        fn += '.csv'
 
+        # Predict
+        s2preds = defaultdict(list)         # second to predictions (list because overlap if stride < window)
+        if self.params['dropout_conf']:
+            # Each batch is just a 20-second clip repeated batch_size times
+            for j in range(num_batches):
+                cur_batch = np.zeros(batch_shape)
+                src_start_idx = j * (sr * self.params['stride'])
+                src_end_idx = src_start_idx + (sr * melgram_nsec)
+                cur_src = src[src_start_idx:src_end_idx]
+                cur_melgram = compute_log_melgram_from_np(cur_src, melgram_nsec, sr, HOP_LEN, N_FFT, N_MELS)
+                cur_melgram = (cur_melgram - mean) / std
+                for k in range(self.params['batch_size']):
+                    cur_batch[k] = np.expand_dims(cur_melgram, 2)
+
+                # if j == 15:
+                #     print cur_batch[j]
+
+                cur_batch = cur_batch.astype(np.float32, copy=False)
+                fc, outs = sess.run([model.fc, model.out], feed_dict={'clip_batch:0': cur_batch})
+                pos_probs = [self.softmax(fc_val)[1] for fc_val in fc]  # 1 for positive, fc_val is row
+                if j == 15:
+                    print fc, fc.shape
+                    print pos_probs
+
+                cur_melgram_s = j * self.params['stride']         # second
+                for rel_s in range(melgram_nsec):
+                    cur_s = cur_melgram_s + rel_s
+                    if self.params['obj'] == 'valence_class':
+                        # s2preds[cur_s].extend(outs[:,1])
+                        # probs = [self.softmax(fc_val)[1] for fc_val in fc]  # 1 for positive
                         # if j == 15:
-                        #     print cur_batch[j]
+                        #     print pos_probs
+                        s2preds[cur_s].extend(pos_probs)
+        else:
+            for j in range(num_batches):
+                cur_batch = np.zeros(batch_shape)
+                batch_start_idx = j * (self.params['batch_size'] * (sr * self.params['stride']))
+                for k in range(self.params['batch_size']):
+                    # Start and end indices are for one 20 second sample
+                    src_start_idx = batch_start_idx + (k * (sr * melgram_nsec))
+                    src_end_idx = batch_start_idx + ((k+1) * (sr * melgram_nsec))
+                    cur_src = src[src_start_idx:src_end_idx]
+                    cur_melgram = compute_log_melgram_from_np(cur_src, melgram_nsec, sr, HOP_LEN, N_FFT, N_MELS)
+                    cur_melgram = (cur_melgram - mean) / std
+                    cur_batch[k] = np.expand_dims(cur_melgram, 2)
 
-                        cur_batch = cur_batch.astype(np.float32, copy=False)
-                        fc, outs = sess.run([model.fc, model.out], feed_dict={'clip_batch:0': cur_batch})
-                        pos_probs = [self.softmax(fc_val)[1] for fc_val in fc]  # 1 for positive, fc_val is row
-                        if j == 15:
-                            print fc, fc.shape
-                            print pos_probs
+                cur_batch = cur_batch.astype(np.float32, copy=False)
+                fc, outs = sess.run([model.fc, model.out], feed_dict={'clip_batch:0': cur_batch})
 
-                        cur_melgram_s = j * self.params['stride']         # second
-                        for rel_s in range(melgram_nsec):
-                            cur_s = cur_melgram_s + rel_s
-                            if self.params['obj'] == 'valence_class':
-                                # s2preds[cur_s].extend(outs[:,1])
-                                # probs = [self.softmax(fc_val)[1] for fc_val in fc]  # 1 for positive
-                                # if j == 15:
-                                #     print pos_probs
-                                s2preds[cur_s].extend(pos_probs)
-                else:
-                    for j in range(num_batches):
-                        cur_batch = np.zeros(batch_shape)
-                        batch_start_idx = j * (self.params['batch_size'] * (sr * self.params['stride']))
-                        for k in range(self.params['batch_size']):
-                            # Start and end indices are for one 20 second sample
-                            src_start_idx = batch_start_idx + (k * (sr * melgram_nsec))
-                            src_end_idx = batch_start_idx + ((k+1) * (sr * melgram_nsec))
-                            cur_src = src[src_start_idx:src_end_idx]
-                            cur_melgram = compute_log_melgram_from_np(cur_src, melgram_nsec, sr, HOP_LEN, N_FFT, N_MELS)
-                            cur_melgram = (cur_melgram - mean) / std
-                            cur_batch[k] = np.expand_dims(cur_melgram, 2)
+                # Add to s2preds
+                batch_start_s = (j * self.params['batch_size'] * self.params['stride'])      # second
+                for k, out in enumerate(outs):
+                    cur_melgram_s = batch_start_s + (k * self.params['stride'])
+                    for rel_s in range(melgram_nsec):
+                        cur_s = cur_melgram_s + rel_s
+                        # print batch_start_s, cur_melgram_s, rel_s, cur_s
+                        if self.params['obj'] == 'valence_reg':
+                            s2preds[cur_s].append(out[0])
+                        elif self.params['obj'] == 'valence_class':
+                            # 0 because only using bs = 1 right now
+                            s2preds[cur_s].append(self.softmax(fc[0])[1])  # 1 for positive
 
-                        cur_batch = cur_batch.astype(np.float32, copy=False)
-                        fc, outs = sess.run([model.fc, model.out], feed_dict={'clip_batch:0': cur_batch})
+        with open(os.path.join(preds_dir, fn), 'wb') as f:
+            # If creating confidence intervals from dropout, each batch is one audio sample repeated
+            if self.params['dropout_conf']:
+                f.write('Valence_mean,Valence_std\n')
+                for s in sorted(s2preds):
+                    mean = np.mean(s2preds[s])
+                    std = np.std(s2preds[s])
+                    f.write('{},{}\n'.format(mean, std))
+            else:
+                f.write('Valence\n')
+                for s in sorted(s2preds):
+                    # print s, s2preds[s]
+                    pred = sum(s2preds[s]) / float(len(s2preds[s]))
+                    f.write('{}\n'.format(pred))
 
-                        # Add to s2preds
-                        batch_start_s = (j * self.params['batch_size'] * self.params['stride'])      # second
-                        for k, out in enumerate(outs):
-                            cur_melgram_s = batch_start_s + (k * self.params['stride'])
-                            for rel_s in range(melgram_nsec):
-                                cur_s = cur_melgram_s + rel_s
-                                # print batch_start_s, cur_melgram_s, rel_s, cur_s
-                                if self.params['obj'] == 'valence_reg':
-                                    s2preds[cur_s].append(out[0])
-                                elif self.params['obj'] == 'valence_class':
-                                    # 0 because only using bs = 1 right now
-                                    s2preds[cur_s].append(self.softmax(fc[0])[1])  # 1 for positive
+        print 'Number pts according to source signal: {}'.format(num_pts)
+        print 'Number batches according to source signal: {}'.format(num_batches)
+        print 'Length of source signal in seconds: {}'.format(src_nsec)
+        print 'Time elapsed: {} minutes'.format((time.time() - start_time) / 60.0)
 
-                with open(os.path.join(preds_dir, fn), 'wb') as f:
-                    # If creating confidence intervals from dropout, each batch is one audio sample repeated
-                    if self.params['dropout_conf']:
-                        f.write('Valence_mean,Valence_std\n')
-                        for s in sorted(s2preds):
-                            mean = np.mean(s2preds[s])
-                            std = np.std(s2preds[s])
-                            f.write('{},{}\n'.format(mean, std))
-                    else:
-                        f.write('Valence\n')
-                        for s in sorted(s2preds):
-                            # print s, s2preds[s]
-                            pred = sum(s2preds[s]) / float(len(s2preds[s]))
-                            f.write('{}\n'.format(pred))
-
-                print 'Number pts according to source signal: {}'.format(num_pts)
-                print 'Number batches according to source signal: {}'.format(num_batches)
-                print 'Length of source signal in seconds: {}'.format(src_nsec)
-                print 'Time elapsed: {} minutes'.format((time.time() - start_time) / 60.0)
-
-                # coord.request_stop()
-                # coord.join(threads)
-
-            # Clear previous video's graph
-            # tf.reset_default_graph()
 
     ####################################################################################################################
     # Helper functions
