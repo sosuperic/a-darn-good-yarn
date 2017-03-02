@@ -7,6 +7,7 @@
     <script src="../static/jslibs/dat.gui.js"></script>
     <script src="/static/jslibs/jquery.min.js"></script>
     <script src="../static/jslibs/Chart.bundle.js"></script>
+    <!--<script src="../static/jslibs/chart.min.js"></script>-->
     <script src="../static/jslibs/chartjs.ext.conf.js"></script>
     <!-- <link rel="stylesheet" href="css/styles.css?v=1.0"> -->
 </head>
@@ -341,8 +342,7 @@
                 var numSec = data.length;
                 var labels = [];
                 for (var i = 0; i < numSec; i++) {
-//                    labels.push(formatSeconds(i));
-                    labels.push(i);
+                    labels.push(formatSeconds(i));
                 }
                 return labels;
             }
@@ -355,7 +355,7 @@
             // Each object in dataset array corresponds to one line
             // e.g. one line for each emotion
             var dataset = [];
-            var COLORS = ["rgba(15,171,182,0.75)", "rgba(216,122,21,0.75)"];
+            var COLORS = ["rgba(15,171,182,0.75)", "rgba(204, 181, 37,0.75)"];
             for (var key in data.preds) {   // e.g. audio, visual
                 if (key == 'visual') {
                     dataset.push({
@@ -379,7 +379,7 @@
 //                    });
                     dataset.push({
                         label: 'audio-valence_lower-bound',
-                        borderWidth: 0.5,
+                        borderWidth: 1.0,
                         data: downsampleTimeseries(data.preds[key]['pos_lower'], DOWNSAMPLE_RATE),
                         borderColor: COLORS[1],
                         fill: false
@@ -393,7 +393,7 @@
                     });
                     dataset.push({
                         label: 'audio-valence_upper-bound',
-                        borderWidth: 0.5,
+                        borderWidth: 1.0,
                         data: downsampleTimeseries(data.preds[key]['pos_upper'], DOWNSAMPLE_RATE),
                         borderColor: COLORS[1],
                         fill: false
@@ -466,16 +466,16 @@
                 options: options
             });
 
-            // Attempt to use stripe
+//             Attempt to use stripe
 //            var config = {
 //                type: 'stripe',
 //                data: chartData,
 //                options: options
 //            };
 //            var ctx = document.getElementById("chart").getContext("2d");
-////            if (chart) {
-////                chart.destroy();
-////            }
+//            if (chart) {
+//                chart.destroy();
+//            }
 //            chart = new Chart(ctx, config);
 //            console.log(ctx);
 //            console.log(config);

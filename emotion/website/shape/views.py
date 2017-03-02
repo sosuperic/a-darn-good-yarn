@@ -78,6 +78,17 @@ def get_preds_from_dfs(name2df_and_window):
     """
     Return dict. Key is the type (visual/audio). Value is a dictionary that maps label to list of smoothed predictions.
     """
+    def get_capped_std_val(mean_val, std_val):
+        ceiling_capped = floor_capped = std_val
+        if (std_val + mean_val > 1):
+            ceiling_capped = 1 - mean_val
+        if (mean_val - std_val < 0):
+            floor_capped = mean_val
+        ceiling_std = std_val if ceiling_capped == std_val else ceiling_capped - mean_val
+        floor_std = std_val if floor_capped == std_val else mean_val - floor_capped
+        capped_std = min(ceiling_std, floor_std)
+        return capped_std
+
     preds = {}
     for name, df_and_window in name2df_and_window.items():
         df = df_and_window['df']
@@ -86,11 +97,11 @@ def get_preds_from_dfs(name2df_and_window):
         if name == 'visual':
             values = list(smooth(df.pos.values, window_len=window)) if (df is not None) else []
             preds[name]['pos'] = values
-            preds[name]['std'] = [0.0 for _ in range(len(values))]
+            preds[name]['std'] = [0.04 for _ in range(len(values))]
         elif name == 'audio':
             values = list(smooth(df.Valence_mean.values, window_len=window)) if (df is not None) else []
             std = list(smooth(df.Valence_std.values, window_len=window)) if (df is not None) else []
-            # std = [i, std_val in enumerate(std)]
+            std = [get_capped_std_val(values[i], std_val) for i, std_val in enumerate(std)]
             preds[name]['pos'] = values
             preds[name]['std'] = std
             preds[name]['pos_lower'] = [max(0, values[i] - std_val) for i, std_val in enumerate(std)]
