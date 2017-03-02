@@ -222,6 +222,37 @@ class SentibankDataset(Dataset):
 
             return files_list
 
+        elif self.params['obj'] == 'sent_biclass':
+            files_list = []
+
+            # Set path
+            tfrecords_path = TFRECORDS_PATH[self.params['dataset']] + '_biclass'
+            tfrecords_dir = os.path.join(self.__cwd__, tfrecords_path)
+
+            # Load some pre-computed things
+            self.num_pts[split_name] = pickle.load(open(os.path.join(tfrecords_dir, 'split2n.pkl'), 'rb'))[split_name]
+            self.mean = pickle.load(open(os.path.join(tfrecords_dir, 'mean.pkl'), 'rb'))
+            self.std = pickle.load(open(os.path.join(tfrecords_dir, 'std.pkl'), 'rb'))
+            self.output_dim = 2
+            print 'output_dim: {}'.format(self.output_dim)
+
+            # Save mean and std to checkpoint dir
+            with open(os.path.join(self.params['ckpt_dirpath'], 'mean.pkl'), 'wb') as f:
+                pickle.dump(self.mean, f, protocol=2)
+            with open(os.path.join(self.params['ckpt_dirpath'], 'std.pkl'), 'wb') as f:
+                pickle.dump(self.std, f, protocol=2)
+
+            # Iterate through directory, extract labels from biconcept
+            split_dir = os.path.join(tfrecords_dir, split_name)
+            self.label2bc = {}
+            for f in [f for f in os.listdir(split_dir) if not f.startswith('.')]:
+                # Add all tfrecord
+                tfrecord_path = os.path.join(tfrecords_dir, split_name, f)
+                files_list.append(tfrecord_path)
+
+            return files_list
+
+
         else:
             files_list = []
 
@@ -355,6 +386,16 @@ class SentibankDataset(Dataset):
                     'img': tf.FixedLenFeature([], tf.string),
                     'bc': tf.FixedLenFeature([], tf.int64)
                 })
+        elif self.params['obj'] == 'sent_biclass':
+            features = tf.parse_example(serialized_examples, {
+                    'id': tf.FixedLenFeature([], tf.string),
+                    'h': tf.FixedLenFeature([], tf.int64),
+                    'w': tf.FixedLenFeature([], tf.int64),
+                    'img': tf.FixedLenFeature([], tf.string),
+                    'grayscale_hist': tf.FixedLenFeature([], tf.string),
+                    'color_hist': tf.FixedLenFeature([], tf.string),
+                    'sent_biclass': tf.FixedLenFeature([], tf.int64)
+                })
         else:
             features = tf.parse_example(serialized_examples, {
                     'id': tf.FixedLenFeature([], tf.string),
@@ -396,6 +437,8 @@ class SentibankDataset(Dataset):
             #     pass
             return tf.cast(0.0, tf.float32)
 
+        # TODO: decode grayscale_hist and color_hist
+
         imgs = tf.map_fn(decode_img, features['img'], dtype=tf.float32,
                           back_prop=False, parallel_iterations=10)
         labels = tf.map_fn(decode_label, features[self.params['obj']], dtype=tf.int32,
@@ -431,6 +474,7 @@ class SentibankDataset(Dataset):
                 neg_match = tf.nn.top_k(neg_match, k=label_batch.get_shape().as_list()[0]).indices # sort indices [1,4,0,2,3]
                 pos_match = tf.nn.top_k(pos_match, k=label_batch.get_shape().as_list()[0]).indices
 
+                # TODO: histogram slicing dimensions will be different
                 neg_imgs = tf.slice(tf.gather(img_batch, neg_match), [0,0,0,0],
                                     [num_neg, self.params['img_crop_w'], self.params['img_crop_h'], 3])
                 pos_imgs = tf.slice(tf.gather(img_batch, pos_match), [0,0,0,0],

@@ -84,9 +84,7 @@ def get_preds_from_dfs(name2df_and_window):
             ceiling_capped = 1 - mean_val
         if (mean_val - std_val < 0):
             floor_capped = mean_val
-        ceiling_std = std_val if ceiling_capped == std_val else ceiling_capped - mean_val
-        floor_std = std_val if floor_capped == std_val else mean_val - floor_capped
-        capped_std = min(ceiling_std, floor_std)
+        capped_std = min(ceiling_capped, floor_capped)
         return capped_std
 
     preds = {}

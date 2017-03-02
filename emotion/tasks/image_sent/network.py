@@ -12,6 +12,7 @@ from prepare_data import SENT_BICLASS_LABEL2INT, SENT_TRICLASS_LABEL2INT, SENTIB
     get_bc2idx
 from core.image.basic_cnn import BasicVizsentCNN
 from core.image.basic_plus_cnn import BasicPlusCNN
+from core.image.ff_net import FFNet
 from core.image.vgg.vgg16 import vgg16
 from core.image.modified_alexnet import ModifiedAlexNet
 from core.utils.utils import get_optimizer, load_model, save_model, setup_logging, scramble_img, scramble_img_recursively
@@ -603,6 +604,14 @@ class Network(object):
                                     dropout_keep=self.params['dropout'],
                                     bn_decay=self.params['bn_decay'],
                                     is_training=is_training)
+        # Note: hist are features not arch, but hacky way to match things, e.g. in config.yaml
+        elif self.params['arch'] == 'gray_hist' or self.params['arch'] == 'color_hist':
+            model = FFNet(
+            input_dim=self.input_dim,
+            hidden_dim=self.params['hidden_dim'],
+            output_dim=self.output_dim,
+            imgs=img_batch,
+            dropout_keep=self.params['dropout'])
 
         return model
 

@@ -12,15 +12,19 @@ class ModifiedAlexNet(object):
         self.output_dim = output_dim
         self.imgs = imgs
         self.dropout_keep = tf.constant(dropout_keep)
-        self.batch_size = self.imgs.get_shape().as_list()[0]        # variable sized batch
+        # self.batch_size = self.imgs.get_shape().as_list()[0]        # variable sized batch
         self.bn_decay = bn_decay
         self.is_training = is_training
         self.bn_reuse = False if self.is_training else True
         # print 'MAN {}'.format(self.is_training)
 
         # Input
+        # self.img_batch = tf.placeholder_with_default(self.imgs,
+        #     shape=[self.batch_size, self.img_h, self.img_w, 3], name='img_batch')
         self.img_batch = tf.placeholder_with_default(self.imgs,
-            shape=[self.batch_size, self.img_h, self.img_w, 3], name='img_batch')
+            shape=[None, self.img_h, self.img_w, 3], name='img_batch')
+
+        self.batch_size = tf.shape(self.img_batch)[0]
 
         # Rest of graph
         with tf.variable_scope('conv1') as scope:
@@ -80,7 +84,13 @@ class ModifiedAlexNet(object):
             self.pool5 = tf.nn.max_pool(self.relu5, [1, 3, 3, 1], [1, 2, 2, 1], 'SAME')
 
         with tf.variable_scope('fc6'):
-            self.reshaped = tf.reshape(self.pool5, [self.batch_size, -1])
+
+            self.pool5_shape_list = self.pool5.get_shape().as_list()    # (?,a,b,256) (? because batch_size is dynamic)
+            self.reshape_dim = self.pool5_shape_list[1] *  self.pool5_shape_list[2] * self.pool5_shape_list[3]
+            self.reshaped = tf.reshape(self.pool5, [self.batch_size, self.reshape_dim])
+
+
+            # self.reshaped = tf.reshape(self.pool5, [self.batch_size, -1])
             # self.fc6 = self.fc(self.reshaped, 4096, 'fc6')
             self.fc6 = self.fc(self.reshaped, 2048, 'fc6')
             # self.fc6 = self.fc(self.reshaped, 1024, 'fc6')
