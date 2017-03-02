@@ -129,7 +129,11 @@ if __name__ == '__main__':
         # params['dropout'] = 1.0
         params['ckpt_dirpath'] = os.path.join(__location__, 'checkpoints', params['ckpt_dir'])
         network = Network(params)
-        network.predict()
+        if params['obj'] == 'bc':
+            network.predict_bc()
+        else:
+            network.predict()
+
 
 
 

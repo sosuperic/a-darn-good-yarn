@@ -552,6 +552,80 @@ class Network(object):
             # Clear previous video's graph
             tf.reset_default_graph()
 
+    def predict_bc(self):
+        """
+        Predict for biconcept classification. Pretty much the same as predict(), except it only saves the top k
+        biconcepts. Function getting messy so just making a separate one for now.
+        """
+        self.logger = self._get_logger()
+
+        # labelidx2filteredidx created by dataset
+        labelidx2filteredidx = pickle.load(open(
+            os.path.join(self.params['ckpt_dirpath'], 'bc_labelidx2filteredidx.pkl'), 'rb'))
+        filteredidx2labelidx = {v:k for k,v in labelidx2filteredidx.items()}
+        bc2labelidx = get_bc2idx(self.params['dataset'])
+        labelidx2bc = {v:k for k,v in bc2labelidx.items()}
+
+        # If given path contains frames/, just predict for that one video
+        # Else walk through directory and predict for every folder that contains frames/
+        dirpaths = None
+        if os.path.exists(os.path.join(self.params['vid_dirpath'], 'frames')):
+            dirpaths = [self.params['vid_dirpath']]
+        else:
+            dirpaths = self.get_all_vidpaths_with_frames(self.params['vid_dirpath'])
+
+        for dirpath in dirpaths:
+            # Skip if exists
+            # if os.path.exists(os.path.join(dirpath, 'preds', 'sent_biclass_19.csv')):
+            #     print 'Skip: {}'.format(dirpath)
+            #     continue
+            with tf.Session() as sess:
+                # Get data
+                self.logger.info('Getting images to predict for {}'.format(dirpath))
+                self.dataset = get_dataset(self.params, dirpath)
+                self.output_dim = self.dataset.get_output_dim()
+                img_batch = self.dataset.setup_graph()
+
+                # Get model
+                self.logger.info('Building graph')
+                model = self._get_model(sess, img_batch)
+
+                # Initialize
+                coord, threads = self._initialize(sess)
+
+                # Restore model now that graph is complete -- loads weights to variables in existing graph
+                self.logger.info('Restoring checkpoint')
+                saver = load_model(sess, self.params)
+
+                # Make directory to store predictions
+                preds_dir = os.path.join(dirpath, 'preds')
+                if not os.path.exists(preds_dir):
+                    os.mkdir(preds_dir)
+
+                # Predict, write to file
+                num_batches = self.dataset.get_num_batches('predict')
+                fn = self.params['obj']
+                if self.params['load_epoch'] is not None:
+                    fn += '_{}'.format(self.params['load_epoch'])
+                if self.params['dropout_conf']:
+                    fn += '_conf{}'.format(self.params['batch_size'])
+                fn += '.csv'
+
+                with open(os.path.join(preds_dir, fn), 'w') as f:
+                    for j in range(num_batches):
+                        last_fc, probs = sess.run([model.last_fc, model.probs],
+                                                  feed_dict={'img_batch:0': img_batch.eval()})
+                        top10_filteredidxs = np.argpartition(probs[0], -10)[-10:][::-1]
+                        top10_labelidxs = [filteredidx2labelidx[idx] for idx in top10_filteredidxs]
+                        top10_bc = [labelidx2bc[idx] for idx in top10_labelidxs]
+                        f.write('{}\n'.format(','.join(top10_bc)))
+
+                coord.request_stop()
+                coord.join(threads)
+
+            # Clear previous video's graph
+            tf.reset_default_graph()
+
     ####################################################################################################################
     # Helper functions
     ####################################################################################################################

@@ -204,13 +204,20 @@ class SentibankDataset(Dataset):
             # Used when reading and decoding tfrecords to get new label
             self.bc_labelidx2filteredidx = pickle.load(open(os.path.join(tfrecords_dir,
                                                                          'bc_labelidx2filteredidx.pkl'), 'rb'))
-            # Save to ckpt_dir so we can map it back to the bc later
-            with open(os.path.join(self.params['ckpt_dirpath'], 'bc_labelidx2filteredidx.pkl'), 'w') as f:
-                pickle.dump(self.bc_labelidx2filteredidx, f, protocol=2)
             keys = tf.constant([str(orig_idx) for orig_idx in self.bc_lookup.values()])
             values = tf.constant([self.bc_labelidx2filteredidx.get(orig_idx, -1) for orig_idx in self.bc_lookup.values()], tf.int64)
             self.label_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(keys, values), -1)
             self.label_table.init.run()
+
+            # Save things to ckpt_dir
+            with open(os.path.join(self.params['ckpt_dirpath'], 'mean.pkl'), 'wb') as f:
+                pickle.dump(self.mean, f, protocol=2)
+            with open(os.path.join(self.params['ckpt_dirpath'], 'std.pkl'), 'wb') as f:
+                pickle.dump(self.std, f, protocol=2)
+            with open(os.path.join(self.params['ckpt_dirpath'], 'bc_labelidx2filteredidx.pkl'), 'w') as f:
+                pickle.dump(self.bc_labelidx2filteredidx, f, protocol=2)
+            with open(os.path.join(self.params['ckpt_dirpath'], 'num_bc_classes.pkl'), 'w') as f:
+                pickle.dump(self.output_dim, f, protocol=2)
 
             # Iterate through directory, extract labels from biconcept
             split_dir = os.path.join(tfrecords_dir, split_name)
@@ -656,6 +663,7 @@ class PredictionDataset(Dataset):
         # Load mean and std
         self.mean = pickle.load(open(os.path.join(self.params['ckpt_dirpath'], 'mean.pkl'), 'r'))
         self.std = pickle.load(open(os.path.join(self.params['ckpt_dirpath'], 'std.pkl'), 'r'))
+        self.output_dim = pickle.load(open(os.path.join(self.params['ckpt_dirpath'], 'num_bc_classes.pkl'), 'rb'))
 
     # Create pipeline, graph, train/valid/test splits for use by network
     def read_and_decode(self, input_queue):
