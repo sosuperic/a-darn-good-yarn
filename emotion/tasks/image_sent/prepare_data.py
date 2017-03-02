@@ -13,7 +13,7 @@ import re
 import tensorflow as tf
 import urllib
 
-from core.utils.utils import read_yaml
+from core.utils.utils import read_yaml, get_grayscale_hist, get_color_hist
 from core.utils.MovieReader import MovieReader
 
 
@@ -571,6 +571,142 @@ def precompute_and_save_bc_VSO_stats(dataset):
     with open(os.path.join(bc_tfrecords_path, 'bc_labelidx2filteredidx.pkl'), 'wb') as f:
         pickle.dump(bc_labelidx2filteredidx, f, protocol=2)
 
+# Writing images to tfrecords
+def write_VSO_biclass_to_tfrecords(dataset, split=[0.8, 0.1, 0.1], sent_neutral_absval=0.5):
+    """
+    To more appropriately shuffle data, create 0.tfrecords, 1.tfrecords, etc. instead of <bc>.tfrecords.
+    """
+    def _bytes_feature(value):
+        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+    def _int64_feature(value):
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+
+    def _float_feature(value):
+        return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+
+    # Iterate over biconcept folders
+    if dataset == 'Sentibank':
+         bc_path = SENTIBANK_BC_PATH
+         dataset_path = SENTIBANK_FLICKR_PATH
+    elif dataset == 'MVSO':
+        bc_path = MVSO_BC_PATH
+        dataset_path = MVSO_PATH
+    else:
+        print 'unknown dataset: {}'.format(dataset)
+
+    # Make directory to hold new tfrecords
+    new_tfrecords_path = os.path.join(dataset_path, 'tfrecords_biclass')
+    if not os.path.exists(new_tfrecords_path):
+        os.mkdir(new_tfrecords_path)
+    for split_name in ['train', 'valid', 'test']:
+        if not os.path.exists(os.path.join(new_tfrecords_path, split_name)):
+            os.mkdir(os.path.join(new_tfrecords_path, split_name))
+
+
+    # Get lookups for each objective in order to label
+    bc2sent = get_bc2sent(dataset)
+
+    # 1) Get all relevant filepaths (relevant according to bc) for each split
+    # 2) Shuffle those filepaths
+    # 3) Go through and write for each split
+    split2fps = defaultdict(list)
+    for bc in [d for d in os.listdir(bc_path) if not d.startswith('.')]:
+        if bc in bc2sent:
+            sent = bc2sent[bc]
+            if (sent < -1 * sent_neutral_absval) or (sent > sent_neutral_absval):
+
+                # Get filepaths of each image
+                cur_bc_path = os.path.join(bc_path, bc)
+                img_fns = [f for f in os.listdir(cur_bc_path) if f.endswith('jpg')]
+                img_fps = [os.path.join(cur_bc_path, fn) for fn in img_fns]
+
+                train_endidx = int(split[0] * len(img_fps))
+                valid_endidx = train_endidx + int(split[1] * len(img_fps))
+                split2fps['train'].extend(img_fps[0:train_endidx])
+                split2fps['valid'].extend(img_fps[train_endidx:valid_endidx])
+                split2fps['test'].extend(img_fps[valid_endidx:])
+
+    # Go through each split, shuffle img fps, and try to write example
+    split2n = defaultdict(int)
+    mean = np.zeros(3)
+    std = np.zeros(3)
+    for split, fps in split2fps.items():
+        tfrecords_fp = os.path.join(new_tfrecords_path, split, '0.tfrecords')
+        writer = tf.python_io.TFRecordWriter(tfrecords_fp)
+
+        print tfrecords_fp
+        # Shuffle fps to mix up bc's
+        random.shuffle(fps)
+
+        for img_fp in fps:
+            try:
+                # Get image
+                img = Image.open(img_fp)
+                if img.mode != 'RGB' or img.format != 'JPEG':   # e.g. black and white (mode == 'L')
+                    continue
+                img = np.array(img)
+
+                # Extract info
+                bc = os.path.dirname(img_fp).split('/')[-1]
+                img_id = os.path.basename(img_fp).split('.')[0]
+                id = bc + '/' + img_id
+                h, w = img.shape[0], img.shape[1]
+                img_raw = img.tostring()
+                sent_biclass_label = get_label(dataset, bc, 'sent_biclass', bc_lookup=bc2sent, sent_neutral_absval=sent_neutral_absval)
+                # sent_biclass_label = sent_biclass_label if sent_biclass_label else 0
+
+                grayscale_hist = np.array(get_grayscale_hist(img, bins=64)).tostring()
+                color_hist = np.array(get_color_hist(img, bins=64)).tostring()
+
+                # Write example
+                example = tf.train.Example(features=tf.train.Features(feature={
+                    'id': _bytes_feature(id),
+                    'h': _int64_feature(h),
+                    'w': _int64_feature(w),
+                    'img': _bytes_feature(img_raw),
+                    'grayscale_hist': _bytes_feature(grayscale_hist),
+                    'color_hist': _bytes_feature(color_hist),
+                    'sent_biclass': _int64_feature(sent_biclass_label)}))
+                writer.write(example.SerializeToString())
+
+                # Update
+                split2n[split] += 1
+
+                # Running average: new average = old average * (n-c)/n + sum of new value/n).
+                # Where n = total count, m = count in this update
+                if split == 'train':
+                    img_mean, img_std = np.zeros(3), np.zeros(3)
+                    for c in range(3):
+                        img_mean[c] = img[:,:,c].mean()
+                        img_std[c] = img[:,:,c].std()
+                    n = split2n['train']
+                    mean = (mean * (n-1) / float(n)) + (img_mean / float(n))
+                    std = (std * (n-1) / float(n)) + (img_std / float(n))
+
+                # Update tfrecords file
+                if (split2n[split] % 10000 == 0):
+                    print 'Split: {}, num_imgs_added: {}'.format(split, split2n[split])
+                    writer.close()
+                    tfrecords_fp = os.path.join(new_tfrecords_path, split, '{}.tfrecords'.format(split2n[split] / 10000))
+                    writer = tf.python_io.TFRecordWriter(tfrecords_fp)
+
+            except Exception as e:
+                print img_fp, e
+
+    # Print stats
+    print split2n
+    print mean
+    print std
+
+    # Save
+    with open(os.path.join(new_tfrecords_path, 'split2n.pkl'), 'wb') as f:
+        pickle.dump(split2n, f, protocol=2)
+    with open(os.path.join(new_tfrecords_path, 'mean.pkl'), 'wb') as f:
+        pickle.dump(mean, f, protocol=2)
+    with open(os.path.join(new_tfrecords_path, 'std.pkl'), 'wb') as f:
+        pickle.dump(std, f, protocol=2)
+
 def get_label(dataset, bc, obj, bc_lookup=None, sent_neutral_absval=None):
     """
     Return label from bi_concept string according to the objective (sentiment, emotion, biconcept)
@@ -975,6 +1111,7 @@ if __name__ == '__main__':
     parser.add_argument('--VSO_to_tfrecords', dest='VSO_to_tfrecords', action='store_true')
     parser.add_argument('--VSO_bc_class_to_tfrecords', dest='VSO_bc_class_to_tfrecords', action='store_true')
     parser.add_argument('--precompute_and_save_bc_VSO_stats', dest='precompute_and_save_bc_VSO_stats', action='store_true')
+    parser.add_argument('--write_VSO_biclass_to_tfrecords', dest='write_VSO_biclass_to_tfrecords', action='store_true')
     parser.add_argument('--move_bad_jpgs', dest='move_bad_jpgs', action='store_true')
     parser.add_argument('--bc_channel_mean_std', dest='bc_channel_mean_std', action='store_true')
     parser.add_argument('--you_dl_imgs', dest='you_dl_imgs', action='store_true')
@@ -1004,6 +1141,8 @@ if __name__ == '__main__':
         VSO_bc_class_to_tfrecords(cmdline.VSO_dataset)
     elif cmdline.precompute_and_save_bc_VSO_stats:
         precompute_and_save_bc_VSO_stats(cmdline.VSO_dataset)
+    elif cmdline.write_VSO_biclass_to_tfrecords:
+        write_VSO_biclass_to_tfrecords(cmdline.VSO_dataset)
     elif cmdline.move_bad_jpgs:
         move_bad_jpgs(cmdline.VSO_dataset)
     elif cmdline.bc_channel_mean_std:

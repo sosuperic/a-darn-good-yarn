@@ -1,5 +1,6 @@
 # Utilities
 
+import cv2
 import json
 import logging.config
 from natsort import natsorted
@@ -292,7 +293,7 @@ def freeze_graph(ckpt_dirpath, arch, obj, load_epoch=None):
         print("%d ops in the final graph." % len(output_graph_def.node))
 
 ########################################################################################################################
-# Other
+# Image
 ########################################################################################################################
 def scramble_img_recursively(img, min_block_size):
     """Return recursively scrambled copy of nxn numpy array
@@ -347,6 +348,28 @@ def scramble_img(img, block_size):
 
     return copy
 
+def get_grayscale_hist(img, bins=64):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    hist = cv2.calcHist([gray], [0], None, [bins], [0, 256])
+    return hist
+
+def get_color_hist(img, bins=64):
+    chans = cv2.split(img)
+    colors = ("b", "g", "r")
+
+    features = []
+    for (chan, color) in zip(chans, colors):
+        # create a histogram for the current channel and
+        # concatenate the resulting histograms for each
+        # channel
+        hist = cv2.calcHist([chan], [0], None, [bins], [0, 256])
+        features.extend(hist)
+
+    return features
+
+########################################################################################################################
+# Other
+########################################################################################################################
 def get_credits_idx(vid_dirpath):
     """
     Return index of frame file that credits begins, if it exists
