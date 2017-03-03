@@ -678,8 +678,8 @@ def write_VSO_biclass_to_tfrecords(dataset, split=[0.8, 0.1, 0.1], sent_neutral_
                 if split == 'train':
                     img_mean, img_std = np.zeros(3), np.zeros(3)
                     for c in range(3):
-                        img_mean[c] = img[:,:,c].mean()
-                        img_std[c] = img[:,:,c].std()
+                        img_mean[c] = (img[:,:,c] / 256.0).mean()
+                        img_std[c] = (img[:,:,c] / 256.0).std()
                     n = split2n['train']
                     mean = (mean * (n-1) / float(n)) + (img_mean / float(n))
                     std = (std * (n-1) / float(n)) + (img_std / float(n))
